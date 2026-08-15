@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Expression Wizard</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand"><div class="brand-mark">EW</div><div><h1>Expression Wizard</h1><p>AdvancedLivePortrait parameter laboratory</p></div></div>
+    <div class="header-actions">
+      <span id="comfyStatus" class="status offline"><i></i> Checking ComfyUI</span>
+      <label class="recent-label">Recent run<select id="recentRuns"><option value="">Current setup</option></select></label>
+      <div class="segmented compact" id="viewToggle"><button data-view="grid" class="active">Grid</button><button data-view="focus">Focus</button></div>
+        <button id="logoutButton" class="text-button">Sign out</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="control-column">
+      <section class="panel source-panel">
+        <div class="panel-heading"><div><span class="eyebrow">01 · Source</span><h2>Choose a portrait</h2></div><span id="sourceDimensions" class="dimension-pill">—</span></div>
+        <div id="sourceCards" class="source-cards"></div>
+        <label class="upload-card" for="sourceUpload"><span class="upload-icon">＋</span><span><strong>Upload portrait</strong><small>PNG, JPEG or WebP · 25 MB max</small></span><input id="sourceUpload" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+      </section>
+
+      <section class="panel experiment-panel">
+        <div class="panel-heading"><div><span class="eyebrow">02 · Experiment</span><h2>Build twelve candidates</h2></div><button id="resetButton" class="text-button">Reset</button></div>
+        <div class="segmented modes" id="modeTabs"><button data-mode="sweep" class="active">Sweep</button><button data-mode="grid">Grid</button><button data-mode="manual">Manual</button></div>
+
+        <div id="sweepBuilder" class="builder active">
+          <div class="field"><label>Parameter</label><select id="sweepParameter"></select></div>
+          <div class="range-pair"><div class="field"><label>Start</label><input id="sweepStart" type="number"></div><div class="range-arrow">→</div><div class="field"><label>End</label><input id="sweepEnd" type="number"></div></div>
+          <p class="hint">Twelve inclusive, mathematically even values. Reverse ranges are supported.</p>
+        </div>
+
+        <div id="gridBuilder" class="builder">
+          <div class="axis-card"><div class="axis-name">X · 4 levels</div><div class="field"><label>Parameter</label><select id="gridXParameter"></select></div><div class="range-pair"><div class="field"><label>Start</label><input id="gridXStart" type="number"></div><div class="range-arrow">→</div><div class="field"><label>End</label><input id="gridXEnd" type="number"></div></div></div>
+          <div class="axis-card"><div class="axis-name">Y · 3 levels</div><div class="field"><label>Parameter</label><select id="gridYParameter"></select></div><div class="range-pair"><div class="field"><label>Start</label><input id="gridYStart" type="number"></div><div class="range-arrow">→</div><div class="field"><label>End</label><input id="gridYEnd" type="number"></div></div></div>
+        </div>
+
+        <div id="manualBuilder" class="builder"><p class="hint manual-help">Enter overrides as <code>blink=-4, smile=0.2</code>. Empty rows use the fixed controls below.</p><div id="manualRows" class="manual-rows"></div></div>
+      </section>
+
+      <section class="panel parameters-panel">
+        <div class="panel-heading"><div><span class="eyebrow">03 · Fixed controls</span><h2>Everything else stays fixed</h2></div><span class="dimension-pill">12 controls</span></div>
+        <div id="parameterControls" class="parameter-controls"></div>
+        <details class="advanced"><summary>Advanced processing</summary><div id="advancedControls" class="parameter-controls advanced-controls"></div><p class="hint">Sample ratio is fixed to 0 and sample parts to OnlyExpression.</p></details>
+      </section>
+
+      <section class="generate-panel">
+        <div id="validationMessage" class="validation-message"></div>
+        <button id="generateButton" class="generate-button"><span>Generate 12 images</span><small>Raw expression geometry · source resolution</small></button>
+        <button id="cancelButton" class="secondary-button hidden">Cancel after current image</button>
+        <button id="retryButton" class="secondary-button hidden">Resume missing images</button>
+      </section>
+    </aside>
+
+    <section class="results-column">
+      <div class="results-header">
+        <div><span class="eyebrow">04 · Results</span><h2 id="resultsTitle">Ready to explore</h2><p id="resultsSubtitle">Configure an experiment, then generate twelve controlled variants.</p></div>
+        <div class="progress-block"><div class="progress-copy"><span id="progressText">0 / 12</span><span id="elapsedText">—</span></div><div class="progress-track"><div id="progressBar"></div></div></div>
+      </div>
+      <div id="errorBanner" class="error-banner hidden"></div>
+      <div id="gridResults" class="results-grid"></div>
+      <div id="focusResults" class="focus-view hidden">
+        <button id="focusPrev" class="nav-arrow left" aria-label="Previous image">‹</button>
+        <div class="focus-stage"><img id="focusImage" alt="Generated expression"><div class="focus-empty" id="focusEmpty">This candidate has not finished yet.</div></div>
+        <button id="focusNext" class="nav-arrow right" aria-label="Next image">›</button>
+        <aside class="focus-inspector"><div class="focus-count" id="focusCount">1 / 12</div><h3 id="focusLabel">Candidate 01</h3><div id="focusChips" class="chips"></div><pre id="focusParameters"></pre></aside>
+        <div id="focusThumbs" class="focus-thumbs"></div>
+      </div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

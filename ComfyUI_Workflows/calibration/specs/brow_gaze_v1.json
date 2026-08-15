@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "batch_id": "brow_gaze_v1",
+  "purpose": "One-control sweep for brows and pupil direction.",
+  "target": "control_atlas_brow_gaze",
+  "stage": "single_control",
+  "anchor": "anchor 1.png",
+  "sample": null,
+  "fixed": {"src_ratio": 1.0, "sample_ratio": 0.0, "sample_parts": "OnlyExpression", "crop_factor": 1.7},
+  "candidates": [
+    {"id": "eyebrow_m08", "label": "eyebrow -8", "controls": {"eyebrow": -8}},
+    {"id": "eyebrow_m04", "label": "eyebrow -4", "controls": {"eyebrow": -4}},
+    {"id": "eyebrow_m02", "label": "eyebrow -2", "controls": {"eyebrow": -2}},
+    {"id": "eyebrow_p02", "label": "eyebrow +2", "controls": {"eyebrow": 2}},
+    {"id": "eyebrow_p05", "label": "eyebrow +5", "controls": {"eyebrow": 5}},
+    {"id": "eyebrow_p10", "label": "eyebrow +10", "controls": {"eyebrow": 10}},
+    {"id": "pupil_x_m08", "label": "pupil X -8", "controls": {"pupil_x": -8}},
+    {"id": "pupil_x_m04", "label": "pupil X -4", "controls": {"pupil_x": -4}},
+    {"id": "pupil_x_p04", "label": "pupil X +4", "controls": {"pupil_x": 4}},
+    {"id": "pupil_x_p08", "label": "pupil X +8", "controls": {"pupil_x": 8}},
+    {"id": "pupil_y_m06", "label": "pupil Y -6", "controls": {"pupil_y": -6}},
+    {"id": "pupil_y_p06", "label": "pupil Y +6", "controls": {"pupil_y": 6}}
+  ]
+}

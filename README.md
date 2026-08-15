@@ -137,3 +137,7 @@ The test suite covers sweep spacing and reversal, grid construction, manual
 validation, forced sample-free settings, upload decoding and dimensions, path
 safety, numeric analysis, and MCP initialization/tool results.
 
+
+## Secure laptop access
+
+Use the authenticated LAN mode described in [LAN_USAGE.md](LAN_USAGE.md). ComfyUI remains private on the desktop; the laptop connects only to Expression Wizard.

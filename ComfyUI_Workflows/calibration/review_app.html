@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Lys calibration reviewer</title>
+  <style>
+    :root { --bg:#15171b;--panel:#20242a;--ink:#f2f2f2;--muted:#aeb4be;--accent:#bc5361;--line:#383e47; }
+    * { box-sizing:border-box; }
+    body { margin:0;background:var(--bg);color:var(--ink);font:14px system-ui,sans-serif; }
+    header { position:sticky;top:0;z-index:5;background:#121419ee;border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap; }
+    h1 { font-size:18px;margin:0 auto 0 0; }
+    button,.button { background:#303640;color:var(--ink);border:1px solid #4b5360;border-radius:6px;padding:8px 11px;cursor:pointer; }
+    button.primary { background:#7f3540;border-color:#a94957; }
+    main { display:grid;grid-template-columns:280px 1fr;gap:18px;padding:18px; }
+    aside { position:sticky;top:76px;height:max-content;background:var(--panel);padding:12px;border-radius:10px; }
+    aside img { width:100%;display:block;border-radius:6px; }
+    .muted { color:var(--muted); }
+    #grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px; }
+    .card { background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden; }
+    .card.keep { border-color:#4ea56b;box-shadow:0 0 0 1px #4ea56b; }
+    .card img { display:block;width:100%;aspect-ratio:1;object-fit:contain;background:#bbb;cursor:zoom-in; }
+    .content { padding:11px; }
+    .candidate-id { font-weight:650; }
+    .parameters { font:12px ui-monospace,monospace;color:#f0b5bd;background:#17191e;padding:7px;border-radius:5px;margin:7px 0;white-space:pre-wrap; }
+    body.hide-parameters .parameters { display:none; }
+    .scores { display:grid;grid-template-columns:repeat(3,1fr);gap:7px; }
+    label { display:block;color:var(--muted);font-size:12px; }
+    select,textarea { width:100%;margin-top:3px;background:#17191e;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:6px; }
+    textarea { min-height:58px;resize:vertical; }
+    .keep-row { display:flex;align-items:center;gap:7px;margin:8px 0;color:var(--ink); }
+    .keep-row input { width:18px;height:18px; }
+    #progress { font-variant-numeric:tabular-nums; }
+    @media(max-width:850px) { main { grid-template-columns:1fr; } aside { position:static; } }
+  </style>
+</head>
+<body class="hide-parameters">
+  <header>
+    <h1 id="title">Lys calibration</h1>
+    <span id="progress"></span>
+    <span id="sync" class="muted">connecting…</span>
+    <button id="toggle">Reveal parameters</button>
+    <label class="button">Import review<input id="import" type="file" accept="application/json" hidden></label>
+    <button id="saveFinal" class="primary">Save final</button>
+    <button id="exportJson">Export JSON</button>
+    <button id="exportCsv">Export CSV</button>
+  </header>
+  <main>
+    <aside><img id="anchor" alt="Canonical anchor"><h2>Canonical anchor</h2><p id="purpose"></p><p class="muted">Score 1–5; higher is always better. Review with parameters hidden first. Drafts save automatically to the batch folder and to this browser.</p></aside>
+    <section id="grid"></section>
+  </main>
+  <script>
+    const parts=location.pathname.split('/').filter(Boolean);
+    const batchId=decodeURIComponent(parts[1]||'');
+    const key=`lys-review:${batchId}`;
+    let manifest=null;
+    let state=JSON.parse(localStorage.getItem(key)||'{}');
+    let saveTimer=null;
+    const grid=document.querySelector('#grid');
+
+    function row(id){return state[id]||(state[id]={identity:null,expression:null,cleanliness:null,keep:false,notes:''})}
+    function payload(){return {schema_version:1,batch_id:manifest.batch_id,exported_at:new Date().toISOString(),reviews:manifest.review_order.map(candidate_id=>({candidate_id,...row(candidate_id)}))}}
+    function renderProgress(){const done=manifest.review_order.filter(id=>{const r=row(id);return r.identity&&r.expression&&r.cleanliness}).length;document.querySelector('#progress').textContent=`${done} / ${manifest.review_order.length} scored`}
+    function save(){localStorage.setItem(key,JSON.stringify(state));renderProgress();clearTimeout(saveTimer);document.querySelector('#sync').textContent='saving…';saveTimer=setTimeout(saveDraft,400)}
+    async function saveDraft(){try{const response=await fetch(`/api/batches/${encodeURIComponent(batchId)}/review/draft`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});if(!response.ok)throw new Error(await response.text());document.querySelector('#sync').textContent='draft saved'}catch(error){document.querySelector('#sync').textContent='browser-only save'}}
+    function score(label,name,r){const wrap=document.createElement('label');wrap.textContent=label;const select=document.createElement('select');select.innerHTML='<option value="">—</option>'+[1,2,3,4,5].map(v=>`<option>${v}</option>`).join('');select.value=r[name]??'';select.onchange=()=>{r[name]=select.value?Number(select.value):null;save()};wrap.append(select);return wrap}
+    function download(name,type,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+    function csvText(){const quote=v=>'"'+String(v??'').replaceAll('"','""')+'"';const lines=['candidate_id,identity,expression,cleanliness,keep,notes'];for(const r of payload().reviews)lines.push([r.candidate_id,r.identity??'',r.expression??'',r.cleanliness??'',r.keep,r.notes].map(quote).join(','));return lines.join('\n')}
+
+    async function init(){
+      if(!batchId){location.href='/';return}
+      const [manifestResponse,reviewResponse]=await Promise.all([fetch(`/api/batches/${encodeURIComponent(batchId)}/manifest`),fetch(`/api/batches/${encodeURIComponent(batchId)}/review`)]);
+      if(!manifestResponse.ok)throw new Error('Batch manifest is unavailable');
+      manifest=await manifestResponse.json();
+      const saved=reviewResponse.ok?await reviewResponse.json():null;
+      if(Object.keys(state).length===0&&saved&&saved.kind!=='empty')state=Object.fromEntries(saved.review.reviews.map(r=>[r.candidate_id,r]));
+      localStorage.setItem(key,JSON.stringify(state));
+      document.title=`Lys review — ${batchId}`;
+      document.querySelector('#title').textContent=`Lys calibration: ${batchId}`;
+      document.querySelector('#anchor').src=`/batch/${encodeURIComponent(batchId)}/anchor.png`;
+      document.querySelector('#purpose').textContent=manifest.purpose||'';
+      document.querySelector('#sync').textContent=saved&&saved.kind!=='empty'?`${saved.kind} loaded`:'server connected';
+      const byId=Object.fromEntries(manifest.candidates.map(c=>[c.candidate_id,c]));
+      for(const id of manifest.review_order){const c=byId[id],r=row(id),card=document.createElement('article');card.className='card'+(r.keep?' keep':'');const image=document.createElement('img');image.src=`/batch/${encodeURIComponent(batchId)}/${c.image}`;image.alt=id;image.onclick=()=>open(image.src,'_blank');const content=document.createElement('div');content.className='content';content.innerHTML=`<div class="candidate-id">${id}</div><div class="parameters">${JSON.stringify(c.effective_parameters,null,2)}</div>`;const scores=document.createElement('div');scores.className='scores';scores.append(score('Identity','identity',r),score('Expression','expression',r),score('Cleanliness','cleanliness',r));content.append(scores);const keep=document.createElement('label');keep.className='keep-row';keep.innerHTML='<input type="checkbox"> Keep';keep.querySelector('input').checked=r.keep;keep.querySelector('input').onchange=e=>{r.keep=e.target.checked;card.classList.toggle('keep',r.keep);save()};content.append(keep);const notes=document.createElement('textarea');notes.placeholder='Optional notes';notes.value=r.notes;notes.oninput=()=>{r.notes=notes.value;save()};content.append(notes);card.append(image,content);grid.append(card)}
+      renderProgress();
+    }
+
+    document.querySelector('#toggle').onclick=e=>{document.body.classList.toggle('hide-parameters');e.target.textContent=document.body.classList.contains('hide-parameters')?'Reveal parameters':'Hide parameters'};
+    document.querySelector('#exportJson').onclick=()=>download(`${batchId}_review.json`,'application/json',JSON.stringify(payload(),null,2));
+    document.querySelector('#exportCsv').onclick=()=>download(`${batchId}_review.csv`,'text/csv',csvText());
+    document.querySelector('#import').onchange=async e=>{const data=JSON.parse(await e.target.files[0].text());if(data.batch_id!==batchId){alert('Review belongs to another batch');return}state=Object.fromEntries(data.reviews.map(r=>[r.candidate_id,r]));localStorage.setItem(key,JSON.stringify(state));location.reload()};
+    document.querySelector('#saveFinal').onclick=async()=>{try{const response=await fetch(`/api/batches/${encodeURIComponent(batchId)}/review/finalize`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});const result=await response.json();if(!response.ok)throw new Error(result.error||'Unable to finalize');document.querySelector('#sync').textContent=`final saved; ${result.accepted} accepted`;alert(`Final review saved. ${result.accepted} candidate(s) meet the acceptance rule.`)}catch(error){alert(error.message)}};
+    init().catch(error=>{document.querySelector('#sync').textContent='load failed';alert(error.message)});
+  </script>
+</body>
+</html>
