@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Expression Wizard — Sign in</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,Segoe UI,system-ui,sans-serif;background:#100f13;color:#f4eef2}
+    *{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;background:radial-gradient(circle at 50% 10%,#35202b 0,#18131a 34rem,#100f13 70%)}
+    main{width:min(440px,calc(100vw - 32px));padding:32px;border:1px solid #503744;border-radius:20px;background:rgba(27,21,28,.96);box-shadow:0 24px 70px #0008}
+    .mark{width:48px;height:48px;display:grid;place-items:center;border-radius:14px;background:#8e3c5d;color:white;font-weight:800;letter-spacing:.08em}
+    h1{margin:22px 0 8px;font-size:28px}p{margin:0 0 24px;color:#c7b8c1;line-height:1.5}
+    label{display:block;margin-bottom:8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#d4a3b7}
+    input{width:100%;padding:14px;border:1px solid #5d4350;border-radius:10px;background:#120f14;color:#fff;font:16px ui-monospace,Consolas,monospace}
+    input:focus{outline:2px solid #a94e73;border-color:transparent}button{width:100%;margin-top:16px;padding:14px;border:0;border-radius:10px;background:#a4436a;color:white;font-weight:800;font-size:15px;cursor:pointer}
+    button:disabled{opacity:.55;cursor:wait}.error{min-height:22px;margin:12px 0 0;color:#ff9ca8;font-size:14px}.note{margin-top:20px;font-size:13px;color:#93838c}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="mark">EW</div>
+    <h1>Expression Wizard</h1>
+    <p>Enter the access token shown in the desktop LAN launcher. The token stays in an HttpOnly session cookie and is not stored by this page.</p>
+    <form id="loginForm">
+      <label for="token">LAN access token</label>
+      <input id="token" type="password" autocomplete="off" spellcheck="false" autofocus required>
+      <button id="submitButton" type="submit">Open Expression Wizard</button>
+      <div id="error" class="error" role="alert"></div>
+    </form>
+    <div class="note">Keep ComfyUI itself bound to localhost. Only Expression Wizard should be exposed to your private network.</div>
+  </main>
+  <script>
+    const form=document.querySelector('#loginForm'),token=document.querySelector('#token'),button=document.querySelector('#submitButton'),error=document.querySelector('#error');
+    form.addEventListener('submit',async event=>{event.preventDefault();error.textContent='';button.disabled=true;try{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token.value})});const body=await response.json();if(!response.ok)throw new Error(body.error||'Sign-in failed');location.replace('/')}catch(reason){error.textContent=reason.message;button.disabled=false;token.select()}});
+    fetch('/api/auth/status').then(response=>response.json()).then(status=>{if(!status.auth_required||status.authenticated)location.replace('/')}).catch(()=>{error.textContent='Expression Wizard is unavailable.'});
+  </script>
+</body>
+</html>
+

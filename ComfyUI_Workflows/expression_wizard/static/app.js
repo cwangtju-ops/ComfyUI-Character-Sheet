@@ -2,7 +2,7 @@ const $=selector=>document.querySelector(selector);
 const state={config:null,source:null,mode:'sweep',fixed:{},job:null,spec:null,view:'grid',focus:0,poll:null,tick:null,startedAt:null};
 const controlNames=['rotate_pitch','rotate_yaw','rotate_roll','blink','eyebrow','wink','pupil_x','pupil_y','aaa','eee','woo','smile'];
 
-async function api(path,options={}){const response=await fetch(path,options);let body=null;try{body=await response.json()}catch{body={error:await response.text()}}if(!response.ok)throw new Error(body.error||`Request failed (${response.status})`);return body}
+async function api(path,options={}){const response=await fetch(path,options);let body=null;try{body=await response.json()}catch{body={error:await response.text()}}if(response.status===401){location.replace('/login');throw new Error('Authentication required')}if(!response.ok)throw new Error(body.error||`Request failed (${response.status})`);return body}
 function label(name){return state.config.parameters.controls[name]?.label||name}
 function fmt(value){const n=Number(value);return Number.isInteger(n)?String(n):String(Number(n.toFixed(5)))}
 function setStatus(message,type=''){const el=$('#comfyStatus');el.className=`status ${type}`;el.innerHTML=`<i></i> ${message}`}
@@ -61,6 +61,8 @@ async function cancelJob(){if(!state.job)return;try{state.job=await api(`/api/ex
 async function retryJob(){if(!state.job)return;try{state.job=await api(`/api/explore/jobs/${encodeURIComponent(state.job.job_id)}/retry`,{method:'POST'});state.startedAt=Date.now();renderJob();startPolling()}catch(error){showError(error.message)}}
 async function loadRecentRuns(){try{const data=await api('/api/explore/jobs');const select=$('#recentRuns'),current=state.job?.job_id||'';select.innerHTML='<option value="">Current setup</option>'+data.jobs.map(job=>`<option value="${job.job_id}">${job.job_id} · ${job.status}</option>`).join('');select.value=current}catch{}}
 
+async function logout(){try{await api('/api/auth/logout',{method:'POST'})}finally{location.replace('/login')}}
+
 async function uploadSource(file){if(!file)return;try{const source=await api('/api/explore/assets',{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream','X-Filename':encodeURIComponent(file.name)},body:file});addSourceCard(source);selectSource(source)}catch(error){showValidation(error.message)}}
 function resetAll(){if(!state.config)return;for(const name of controlNames)state.fixed[name]=state.config.parameters.controls[name].default;for(const name of ['src_ratio','crop_factor'])state.fixed[name]=state.config.parameters.advanced[name].default;renderParameters();renderManualRows();resetRanges();setMode('sweep');validateForm()}
 
@@ -71,7 +73,7 @@ $('#gridXParameter').onchange=()=>{setRangeFor('#gridXParameter','#gridXStart','
 $('#gridYParameter').onchange=()=>{setRangeFor('#gridYParameter','#gridYStart','#gridYEnd');validateForm()};
 document.querySelectorAll('.builder input,.builder select').forEach(input=>input.addEventListener('input',validateForm));
 $('#sourceUpload').onchange=event=>uploadSource(event.target.files[0]);
-$('#generateButton').onclick=generate;$('#cancelButton').onclick=cancelJob;$('#retryButton').onclick=retryJob;$('#resetButton').onclick=resetAll;
+$('#generateButton').onclick=generate;$('#cancelButton').onclick=cancelJob;$('#retryButton').onclick=retryJob;$('#resetButton').onclick=resetAll;$('#logoutButton').onclick=logout;
 $('#recentRuns').onchange=event=>{if(event.target.value)loadJob(event.target.value)};
 $('#focusPrev').onclick=()=>moveFocus(-1);$('#focusNext').onclick=()=>moveFocus(1);
 document.addEventListener('keydown',event=>{if(state.view!=='focus'||['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;if(event.key==='ArrowLeft')moveFocus(-1);if(event.key==='ArrowRight')moveFocus(1)});

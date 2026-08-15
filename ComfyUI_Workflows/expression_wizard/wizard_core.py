@@ -1,10 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import copy
 import datetime as dt
 import hashlib
 import json
 import math
+import os
 import shutil
 import threading
 import time
@@ -752,13 +753,17 @@ def analyze_job_dir(job_dir: Path) -> dict[str, Any]:
     }
 
 
-def rest_request(method: str, path: str, payload: Any | None = None, base_url: str = "http://127.0.0.1:8765") -> Any:
+def rest_request(method: str, path: str, payload: Any | None = None, base_url: str | None = None) -> Any:
+    base_url = (base_url or os.environ.get("EXPRESSION_WIZARD_URL") or "http://127.0.0.1:8765").rstrip("/")
     data = None
     headers = {}
+    token = os.environ.get("EXPRESSION_WIZARD_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(base_url.rstrip("/") + path, data=data, headers=headers, method=method)
+    request = urllib.request.Request(base_url + path, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(request, timeout=610) as response:
             raw = response.read()
@@ -771,5 +776,5 @@ def rest_request(method: str, path: str, payload: Any | None = None, base_url: s
             message = raw
         raise RuntimeError(f"Expression Wizard HTTP {exc.code}: {message}") from exc
     except urllib.error.URLError as exc:
-        raise RuntimeError("Expression Wizard is not running at http://127.0.0.1:8765") from exc
+        raise RuntimeError(f"Expression Wizard is not running at {base_url}") from exc
 

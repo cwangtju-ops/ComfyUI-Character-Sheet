@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import mimetypes
+import os
 import posixpath
+import secrets
+import socket
 import sys
 import threading
 import time
 import urllib.parse
 import webbrowser
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import ThreadingHTTPServer
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Any
 
@@ -21,22 +27,121 @@ if str(CALIBRATION_DIR) not in sys.path:
     sys.path.insert(0, str(CALIBRATION_DIR))
 
 from review_server import ReviewHandler, discover_batches  # noqa: E402
-from lys_calibration import ProjectPaths, read_json  # noqa: E402
+from lys_calibration import ProjectPaths  # noqa: E402
 from wizard_core import MAX_UPLOAD_BYTES, WizardService  # noqa: E402
 
 
 STATIC_ROOT = HERE / "static"
+SESSION_COOKIE = "expression_wizard_session"
+SESSION_TTL_SECONDS = 12 * 60 * 60
+MINIMUM_TOKEN_LENGTH = 24
+
+
+def is_loopback_host(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def lan_ipv4_addresses() -> list[str]:
+    addresses: set[str] = set()
+    try:
+        for item in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            address = item[4][0]
+            parsed = ip_address(address)
+            if parsed.is_private and not parsed.is_loopback and not parsed.is_link_local:
+                addresses.add(address)
+    except OSError:
+        pass
+    return sorted(addresses)
+
+
+def validate_access_token(token: str) -> str:
+    token = token.strip()
+    if len(token) < MINIMUM_TOKEN_LENGTH:
+        raise ValueError(f"Access tokens must contain at least {MINIMUM_TOKEN_LENGTH} characters")
+    return token
+
+
+def load_or_create_token(path: Path, explicit: str | None = None) -> tuple[str, bool]:
+    if explicit:
+        return validate_access_token(explicit), False
+    if path.is_file():
+        return validate_access_token(path.read_text(encoding="utf-8")), False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    token = secrets.token_urlsafe(32)
+    path.write_text(token + "\n", encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return token, True
+
+
+class SessionStore:
+    def __init__(self, ttl_seconds: int = SESSION_TTL_SECONDS):
+        self.ttl_seconds = ttl_seconds
+        self._sessions: dict[str, float] = {}
+        self._lock = threading.RLock()
+
+    def issue(self) -> str:
+        session_id = secrets.token_urlsafe(32)
+        with self._lock:
+            self._sessions[session_id] = time.time() + self.ttl_seconds
+        return session_id
+
+    def valid(self, session_id: str | None) -> bool:
+        if not session_id:
+            return False
+        now = time.time()
+        with self._lock:
+            expires = self._sessions.get(session_id)
+            if expires is None:
+                return False
+            if expires <= now:
+                self._sessions.pop(session_id, None)
+                return False
+            self._sessions[session_id] = now + self.ttl_seconds
+            return True
+
+    def revoke(self, session_id: str | None) -> None:
+        if not session_id:
+            return
+        with self._lock:
+            self._sessions.pop(session_id, None)
 
 
 class ExpressionWizardHandler(ReviewHandler):
-    server_version = "ExpressionWizard/1.0"
+    server_version = "ExpressionWizard/1.1"
 
     @property
     def wizard(self) -> WizardService:
         return self.server.wizard  # type: ignore[attr-defined]
 
+    @property
+    def access_token(self) -> str | None:
+        return self.server.access_token  # type: ignore[attr-defined]
+
+    @property
+    def sessions(self) -> SessionStore:
+        return self.server.sessions  # type: ignore[attr-defined]
+
     def send_error_json(self, status: int, error: Exception | str) -> None:
         self.send_json({"ok": False, "error": str(error)}, status)
+
+    def send_json_headers(self, payload: dict[str, Any], status: int = 200, headers: dict[str, str] | None = None) -> None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(data)
 
     def read_json_body(self, maximum: int = 2 * 1024 * 1024) -> dict[str, Any]:
         try:
@@ -86,17 +191,82 @@ class ExpressionWizardHandler(ReviewHandler):
             return []
         return [urllib.parse.unquote(part) for part in path[len(prefix) :].split("/") if part]
 
+    def session_id(self) -> str | None:
+        cookie = SimpleCookie()
+        try:
+            cookie.load(self.headers.get("Cookie", ""))
+            morsel = cookie.get(SESSION_COOKIE)
+            return morsel.value if morsel else None
+        except Exception:
+            return None
+
+    def authorized(self) -> bool:
+        if self.access_token is None:
+            return True
+        authorization = self.headers.get("Authorization", "")
+        if authorization.startswith("Bearer ") and hmac.compare_digest(authorization[7:], self.access_token):
+            return True
+        return self.sessions.valid(self.session_id())
+
+    def require_authorized(self, path: str) -> bool:
+        if self.authorized():
+            return False
+        if path.startswith("/api/"):
+            self.send_json_headers({"ok": False, "error": "Authentication required"}, HTTPStatus.UNAUTHORIZED)
+        else:
+            self.send_response(HTTPStatus.SEE_OTHER)
+            self.send_header("Location", "/login")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+        return True
+
+    def valid_origin(self) -> bool:
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        parsed = urllib.parse.urlparse(origin)
+        return parsed.scheme in {"http", "https"} and parsed.netloc == self.headers.get("Host")
+
+    def require_valid_origin(self) -> bool:
+        if self.valid_origin():
+            return False
+        self.send_json_headers({"ok": False, "error": "Cross-origin request rejected"}, HTTPStatus.FORBIDDEN)
+        return True
+
     def do_GET(self) -> None:
         path = urllib.parse.urlparse(self.path).path
         try:
-            if path == "/":
-                self.serve_static("index.html")
+            if path == "/api/explore/health":
+                payload: dict[str, Any] = {
+                    "ok": True,
+                    "service": "Expression Wizard",
+                    "version": 2,
+                    "auth_required": self.access_token is not None,
+                    "authenticated": self.authorized(),
+                    "lan_mode": bool(self.server.lan_mode),  # type: ignore[attr-defined]
+                }
+                if self.authorized():
+                    payload["comfyui"] = self.wizard.comfy_status()
+                self.send_json_headers(payload)
+                return
+            if path == "/api/auth/status":
+                self.send_json_headers({"auth_required": self.access_token is not None, "authenticated": self.authorized()})
+                return
+            if path == "/login":
+                if self.access_token is None or self.authorized():
+                    self.send_response(HTTPStatus.SEE_OTHER)
+                    self.send_header("Location", "/")
+                    self.end_headers()
+                else:
+                    self.serve_static("login.html")
                 return
             if path.startswith("/static/"):
                 self.serve_static(path[len("/static/") :])
                 return
-            if path == "/api/explore/health":
-                self.send_json({"ok": True, "service": "Expression Wizard", "version": 1, "comfyui": self.wizard.comfy_status()})
+            if self.require_authorized(path):
+                return
+            if path == "/":
+                self.serve_static("index.html")
                 return
             if path == "/api/explore/config":
                 self.send_json(self.wizard.config())
@@ -136,6 +306,28 @@ class ExpressionWizardHandler(ReviewHandler):
     def do_POST(self) -> None:
         path = urllib.parse.urlparse(self.path).path
         try:
+            if path == "/api/auth/login":
+                if self.access_token is None:
+                    self.send_json_headers({"ok": True, "authenticated": True})
+                    return
+                if self.require_valid_origin():
+                    return
+                supplied = str(self.read_json_body(maximum=4096).get("token", ""))
+                if not hmac.compare_digest(supplied, self.access_token):
+                    time.sleep(0.25)
+                    self.send_json_headers({"ok": False, "error": "Invalid access token"}, HTTPStatus.UNAUTHORIZED)
+                    return
+                session_id = self.sessions.issue()
+                cookie = f"{SESSION_COOKIE}={session_id}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_TTL_SECONDS}"
+                self.send_json_headers({"ok": True, "authenticated": True}, headers={"Set-Cookie": cookie})
+                return
+            if self.require_authorized(path) or self.require_valid_origin():
+                return
+            if path == "/api/auth/logout":
+                self.sessions.revoke(self.session_id())
+                cookie = f"{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
+                self.send_json_headers({"ok": True}, headers={"Set-Cookie": cookie})
+                return
             if path == "/api/explore/assets":
                 length = int(self.headers.get("Content-Length", "0"))
                 if length <= 0:
@@ -177,8 +369,16 @@ class ExpressionWizardHandler(ReviewHandler):
         except Exception as exc:
             self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, exc)
 
+    def do_PUT(self) -> None:
+        path = urllib.parse.urlparse(self.path).path
+        if self.require_authorized(path) or self.require_valid_origin():
+            return
+        super().do_PUT()
+
     def do_DELETE(self) -> None:
         path = urllib.parse.urlparse(self.path).path
+        if self.require_authorized(path) or self.require_valid_origin():
+            return
         parts = self.explore_parts(path)
         try:
             if len(parts) == 2 and parts[0] == "jobs":
@@ -209,24 +409,56 @@ def open_when_ready(url: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Expression Wizard local server")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser = argparse.ArgumentParser(description="Expression Wizard local/LAN server")
+    parser.add_argument("--host", default=None, help="Bind address; defaults to 127.0.0.1 or 0.0.0.0 with --lan")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--api", default="http://127.0.0.1:8188")
+    parser.add_argument("--lan", action="store_true", help="Listen on the LAN and require token authentication")
+    parser.add_argument("--token-file", help="Persistent access-token file; generated when missing")
+    parser.add_argument("--access-token", help="Explicit access token (prefer the token file or environment variable)")
     parser.add_argument("--open-browser", action="store_true")
     args = parser.parse_args()
+
+    host = args.host or ("0.0.0.0" if args.lan else "127.0.0.1")
     paths = ProjectPaths.discover(CALIBRATION_DIR / "lys_calibration.py")
     wizard = WizardService(paths.lys_root, args.api)
-    server = ThreadingHTTPServer((args.host, args.port), ExpressionWizardHandler)
+    lan_mode = not is_loopback_host(host)
+    token: str | None = None
+    token_file = Path(args.token_file).expanduser().resolve() if args.token_file else wizard.paths.root / "_server" / "access_token.txt"
+    explicit_token = args.access_token or os.environ.get("EXPRESSION_WIZARD_ACCESS_TOKEN")
+    created = False
+    if args.lan or lan_mode or explicit_token or args.token_file:
+        token, created = load_or_create_token(token_file, explicit_token)
+
+    server = ThreadingHTTPServer((host, args.port), ExpressionWizardHandler)
     server.wizard = wizard  # type: ignore[attr-defined]
     server.batches = discover_batches(paths)  # type: ignore[attr-defined]
-    url = f"http://{args.host}:{args.port}/"
-    print("Expression Wizard")
-    print(f"Explore: {url}")
-    print(f"ComfyUI: {args.api}")
-    print("Press Ctrl+C to stop")
+    server.access_token = token  # type: ignore[attr-defined]
+    server.sessions = SessionStore()  # type: ignore[attr-defined]
+    server.lan_mode = lan_mode  # type: ignore[attr-defined]
+
+    local_url = f"http://127.0.0.1:{args.port}/"
+    print("Expression Wizard", flush=True)
+    print(f"Local: {local_url}", flush=True)
+    if lan_mode:
+        addresses = lan_ipv4_addresses()
+        if addresses:
+            for address in addresses:
+                print(f"Laptop: http://{address}:{args.port}/", flush=True)
+        else:
+            print("Laptop: use this desktop's private IPv4 address", flush=True)
+    print(f"ComfyUI: {args.api}", flush=True)
+    if token:
+        print(f"Access token: {token}", flush=True)
+        if explicit_token:
+            print("Token source: command/environment", flush=True)
+        else:
+            print(f"Token file: {token_file}", flush=True)
+            if created:
+                print("A new persistent LAN token was created.", flush=True)
+    print("Press Ctrl+C to stop", flush=True)
     if args.open_browser:
-        open_when_ready(url)
+        open_when_ready(local_url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
