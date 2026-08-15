@@ -21,9 +21,9 @@ from comfy_diagnostics import (  # noqa: E402
 )
 
 
-def write_safetensors(path: Path, data: bytes, declared_end: int | None = None) -> None:
+def write_safetensors(path: Path, data: bytes, declared_end: int | None = None, shape_length: int | None = None) -> None:
     header = json.dumps(
-        {"tensor": {"dtype": "U8", "shape": [len(data)], "data_offsets": [0, len(data) if declared_end is None else declared_end]}}
+        {"tensor": {"dtype": "U8", "shape": [len(data) if shape_length is None else shape_length], "data_offsets": [0, len(data) if declared_end is None else declared_end]}}
     ).encode("utf-8")
     path.write_bytes(len(header).to_bytes(8, "little") + header + data)
 
@@ -57,7 +57,7 @@ class ComfyDiagnosticsTests(unittest.TestCase):
             valid = root / "valid.safetensors"
             invalid = root / "invalid.safetensors"
             write_safetensors(valid, b"1234")
-            write_safetensors(invalid, b"12", declared_end=4)
+            write_safetensors(invalid, b"1234", shape_length=2)
             self.assertTrue(validate_safetensors(valid)["valid"])
             self.assertFalse(validate_safetensors(invalid)["valid"])
             inspected = inspect_model(root, "valid.safetensors")

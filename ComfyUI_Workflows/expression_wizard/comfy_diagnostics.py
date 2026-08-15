@@ -11,6 +11,23 @@ MODEL_EXTENSIONS = {".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".onnx", ".e
 MODEL_INPUT_HINTS = ("ckpt", "checkpoint", "model", "lora", "vae", "control", "clip", "unet", "diffusion")
 MAX_INVENTORY_FILES = 20_000
 MAX_SAFETENSORS_HEADER_BYTES = 100 * 1024 * 1024
+SAFETENSORS_DTYPE_BYTES = {
+    "BOOL": 1,
+    "U8": 1,
+    "I8": 1,
+    "F8_E4M3": 1,
+    "F8_E5M2": 1,
+    "U16": 2,
+    "I16": 2,
+    "F16": 2,
+    "BF16": 2,
+    "U32": 4,
+    "I32": 4,
+    "F32": 4,
+    "U64": 8,
+    "I64": 8,
+    "F64": 8,
+}
 
 
 def discover_comfy_root(input_root: Path, output_root: Path, explicit: Path | None = None) -> Path:
@@ -152,6 +169,18 @@ def validate_safetensors(path: Path) -> dict[str, Any]:
             start, end = definition["data_offsets"]
             if not isinstance(start, int) or not isinstance(end, int) or start < 0 or end < start:
                 raise ValueError(f"Tensor {name!r} has invalid offsets")
+            dtype = definition.get("dtype")
+            shape = definition.get("shape")
+            if dtype not in SAFETENSORS_DTYPE_BYTES or not isinstance(shape, list) or any(not isinstance(item, int) or item < 0 for item in shape):
+                raise ValueError(f"Tensor {name!r} has an unsupported dtype or invalid shape")
+            element_count = 1
+            for dimension in shape:
+                element_count *= dimension
+            expected_bytes = element_count * SAFETENSORS_DTYPE_BYTES[dtype]
+            if end - start != expected_bytes:
+                raise ValueError(
+                    f"Tensor {name!r} declares {expected_bytes} bytes from shape/dtype but covers {end - start} bytes"
+                )
             intervals.append((start, end, name))
             tensor_count += 1
         data_bytes = size - 8 - header_length
@@ -164,7 +193,17 @@ def validate_safetensors(path: Path) -> dict[str, Any]:
             position = end
         if position != data_bytes:
             raise ValueError("Tensor data does not fully cover the file")
-        return {"valid": True, "tensor_count": tensor_count, "header_bytes": header_length, "data_bytes": data_bytes}
+        try:
+            from safetensors import safe_open
+
+            with safe_open(str(path), framework="pt", device="cpu") as handle:
+                native_tensor_count = len(handle.keys())
+            if native_tensor_count != tensor_count:
+                raise ValueError("Native safetensors tensor count does not match parsed metadata")
+            validator = "safetensors.safe_open"
+        except ImportError:
+            validator = "structural_fallback"
+        return {"valid": True, "validator": validator, "tensor_count": tensor_count, "header_bytes": header_length, "data_bytes": data_bytes}
     except Exception as exc:
         return {"valid": False, "error": str(exc)}
 

@@ -163,7 +163,10 @@ class ExpressionWizardHandler(ReviewHandler):
         for name, value in (headers or {}).items():
             self.send_header(name, value)
         self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            pass
 
     def read_json_body(self, maximum: int = 2 * 1024 * 1024) -> dict[str, Any]:
         try:

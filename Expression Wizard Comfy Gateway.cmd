@@ -29,7 +29,11 @@ echo Starting the authenticated ComfyUI gateway on port 8189.
 echo Allowed laptop: %EXPRESSION_WIZARD_ALLOWED_CLIENTS%
 echo Keep ComfyUI bound to 127.0.0.1:8188.
 echo Press Ctrl+C to stop.
-"%EW_PYTHON%" "%EW_GATEWAY%" --host 0.0.0.0 --port 8189 --api http://127.0.0.1:8188
+if defined EXPRESSION_WIZARD_COMFY_ROOT (
+  "%EW_PYTHON%" "%EW_GATEWAY%" --host 0.0.0.0 --port 8189 --api http://127.0.0.1:8188 --comfy-root "%EXPRESSION_WIZARD_COMFY_ROOT%"
+) else (
+  "%EW_PYTHON%" "%EW_GATEWAY%" --host 0.0.0.0 --port 8189 --api http://127.0.0.1:8188
+)
 if errorlevel 1 (
   echo.
   echo The ComfyUI gateway stopped with an error.

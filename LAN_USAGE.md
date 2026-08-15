@@ -168,6 +168,7 @@ Then use an ordinary PowerShell in the repository:
 ```powershell
 $env:EXPRESSION_WIZARD_PYTHON = 'C:\Comfy Powerhouse\Comfy Powerhouse\ComfyUI\.venv\Scripts\python.exe'
 $env:EXPRESSION_WIZARD_ALLOWED_CLIENTS = '192.168.2.242'
+$env:EXPRESSION_WIZARD_COMFY_ROOT = 'C:\Comfy Powerhouse\Comfy Powerhouse\ComfyUI'
 & '.\Expression Wizard Comfy Gateway.cmd'
 ```
 
