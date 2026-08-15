@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "batch_id": "baseline_v1",
+  "purpose": "Twelve identical neutral runs establish repeatability and the zero-expression tensor.",
+  "target": "neutral_baseline",
+  "stage": "baseline",
+  "anchor": "anchor 1.png",
+  "sample": null,
+  "fixed": {
+    "src_ratio": 1.0,
+    "sample_ratio": 0.0,
+    "sample_parts": "OnlyExpression",
+    "crop_factor": 1.7
+  },
+  "candidates": [
+    {"id": "neutral_01", "label": "Neutral repeat 01", "controls": {}},
+    {"id": "neutral_02", "label": "Neutral repeat 02", "controls": {}},
+    {"id": "neutral_03", "label": "Neutral repeat 03", "controls": {}},
+    {"id": "neutral_04", "label": "Neutral repeat 04", "controls": {}},
+    {"id": "neutral_05", "label": "Neutral repeat 05", "controls": {}},
+    {"id": "neutral_06", "label": "Neutral repeat 06", "controls": {}},
+    {"id": "neutral_07", "label": "Neutral repeat 07", "controls": {}},
+    {"id": "neutral_08", "label": "Neutral repeat 08", "controls": {}},
+    {"id": "neutral_09", "label": "Neutral repeat 09", "controls": {}},
+    {"id": "neutral_10", "label": "Neutral repeat 10", "controls": {}},
+    {"id": "neutral_11", "label": "Neutral repeat 11", "controls": {}},
+    {"id": "neutral_12", "label": "Neutral repeat 12", "controls": {}}
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "batch_id": "smile_v1",
+  "purpose": "Fine one-control sweep across the complete smile range.",
+  "target": "control_atlas_smile",
+  "stage": "single_control",
+  "anchor": "anchor 1.png",
+  "sample": null,
+  "fixed": {"src_ratio": 1.0, "sample_ratio": 0.0, "sample_parts": "OnlyExpression", "crop_factor": 1.7},
+  "candidates": [
+    {"id": "smile_m025", "label": "smile -0.25", "controls": {"smile": -0.25}},
+    {"id": "smile_m015", "label": "smile -0.15", "controls": {"smile": -0.15}},
+    {"id": "smile_m005", "label": "smile -0.05", "controls": {"smile": -0.05}},
+    {"id": "smile_p005", "label": "smile +0.05", "controls": {"smile": 0.05}},
+    {"id": "smile_p012", "label": "smile +0.12", "controls": {"smile": 0.12}},
+    {"id": "smile_p022", "label": "smile +0.22", "controls": {"smile": 0.22}},
+    {"id": "smile_p035", "label": "smile +0.35", "controls": {"smile": 0.35}},
+    {"id": "smile_p050", "label": "smile +0.50", "controls": {"smile": 0.50}},
+    {"id": "smile_p070", "label": "smile +0.70", "controls": {"smile": 0.70}},
+    {"id": "smile_p090", "label": "smile +0.90", "controls": {"smile": 0.90}},
+    {"id": "smile_p110", "label": "smile +1.10", "controls": {"smile": 1.10}},
+    {"id": "smile_p130", "label": "smile +1.30", "controls": {"smile": 1.30}}
+  ]
+}

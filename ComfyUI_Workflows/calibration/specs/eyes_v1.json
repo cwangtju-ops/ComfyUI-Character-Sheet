@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "batch_id": "eyes_v1",
+  "purpose": "One-control sweep for bilateral eyelid opening/closure and one-sided wink behavior.",
+  "target": "control_atlas_eyes",
+  "stage": "single_control",
+  "anchor": "anchor 1.png",
+  "sample": null,
+  "fixed": {"src_ratio": 1.0, "sample_ratio": 0.0, "sample_parts": "OnlyExpression", "crop_factor": 1.7},
+  "candidates": [
+    {"id": "neutral", "label": "Neutral control", "controls": {}},
+    {"id": "blink_m12", "label": "blink -12", "controls": {"blink": -12}},
+    {"id": "blink_m08", "label": "blink -8", "controls": {"blink": -8}},
+    {"id": "blink_m04", "label": "blink -4", "controls": {"blink": -4}},
+    {"id": "blink_m02", "label": "blink -2", "controls": {"blink": -2}},
+    {"id": "blink_p02", "label": "blink +2", "controls": {"blink": 2}},
+    {"id": "blink_p04", "label": "blink +4", "controls": {"blink": 4}},
+    {"id": "wink_p04", "label": "wink +4", "controls": {"wink": 4}},
+    {"id": "wink_p08", "label": "wink +8", "controls": {"wink": 8}},
+    {"id": "wink_p12", "label": "wink +12", "controls": {"wink": 12}},
+    {"id": "wink_p18", "label": "wink +18", "controls": {"wink": 18}},
+    {"id": "wink_p235", "label": "wink +23.5", "controls": {"wink": 23.5}}
+  ]
+}

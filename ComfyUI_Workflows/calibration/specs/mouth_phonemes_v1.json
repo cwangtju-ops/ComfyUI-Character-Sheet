@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "batch_id": "mouth_phonemes_v1",
+  "purpose": "One-control sweep for mouth opening and EEE/WOO shaping.",
+  "target": "control_atlas_mouth_phonemes",
+  "stage": "single_control",
+  "anchor": "anchor 1.png",
+  "sample": null,
+  "fixed": {"src_ratio": 1.0, "sample_ratio": 0.0, "sample_parts": "OnlyExpression", "crop_factor": 1.7},
+  "candidates": [
+    {"id": "aaa_m15", "label": "AAA -15", "controls": {"aaa": -15}},
+    {"id": "aaa_p15", "label": "AAA +15", "controls": {"aaa": 15}},
+    {"id": "aaa_p40", "label": "AAA +40", "controls": {"aaa": 40}},
+    {"id": "aaa_p80", "label": "AAA +80", "controls": {"aaa": 80}},
+    {"id": "eee_m10", "label": "EEE -10", "controls": {"eee": -10}},
+    {"id": "eee_m05", "label": "EEE -5", "controls": {"eee": -5}},
+    {"id": "eee_p05", "label": "EEE +5", "controls": {"eee": 5}},
+    {"id": "eee_p10", "label": "EEE +10", "controls": {"eee": 10}},
+    {"id": "woo_m10", "label": "WOO -10", "controls": {"woo": -10}},
+    {"id": "woo_m05", "label": "WOO -5", "controls": {"woo": -5}},
+    {"id": "woo_p05", "label": "WOO +5", "controls": {"woo": 5}},
+    {"id": "woo_p10", "label": "WOO +10", "controls": {"woo": 10}}
+  ]
+}
