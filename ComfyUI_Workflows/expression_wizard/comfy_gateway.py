@@ -22,6 +22,13 @@ if str(CALIBRATION_DIR) not in sys.path:
     sys.path.insert(0, str(CALIBRATION_DIR))
 
 from lys_calibration import API_DEFAULT, ComfyClient  # noqa: E402
+from comfy_diagnostics import (  # noqa: E402
+    diagnose_workflow,
+    discover_comfy_root,
+    inspect_model,
+    list_custom_nodes,
+    list_models,
+)
 
 
 MINIMUM_TOKEN_LENGTH = 24
@@ -118,6 +125,14 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
     def output_root(self) -> Path:
         return self.server.output_root  # type: ignore[attr-defined]
 
+    @property
+    def models_root(self) -> Path:
+        return self.server.models_root  # type: ignore[attr-defined]
+
+    @property
+    def custom_nodes_root(self) -> Path:
+        return self.server.custom_nodes_root  # type: ignore[attr-defined]
+
     def log_message(self, format: str, *args: object) -> None:
         print(f"[{self.log_date_time_string()}] {self.client_address[0]} {format % args}", flush=True)
 
@@ -146,14 +161,14 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
             while chunk := source.read(1024 * 1024):
                 self.wfile.write(chunk)
 
-    def authorized(self) -> bool:
+    def authorized(self, admin: bool = False) -> bool:
         if not client_is_allowed(self.client_address[0], self.server.allowed_clients):  # type: ignore[attr-defined]
             self.send_failure(HTTPStatus.FORBIDDEN, "Client IP is not allowed")
             return False
         authorization = self.headers.get("Authorization", "")
-        token = self.server.access_token  # type: ignore[attr-defined]
+        token = self.server.admin_token if admin else self.server.access_token  # type: ignore[attr-defined]
         if not authorization.startswith("Bearer ") or not hmac.compare_digest(authorization[7:], token):
-            self.send_failure(HTTPStatus.UNAUTHORIZED, "Authentication required")
+            self.send_failure(HTTPStatus.UNAUTHORIZED, "Administrator authentication required" if admin else "Authentication required")
             return False
         return True
 
@@ -174,7 +189,35 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
             if parsed.path == "/health":
                 self.send_json({"ok": True, "service": "Expression Wizard ComfyUI Gateway", "auth_required": True})
                 return
-            if not self.authorized():
+            admin = parsed.path.startswith("/api/admin/")
+            if not self.authorized(admin=admin):
+                return
+            if parsed.path == "/api/admin/summary":
+                models = list_models(self.models_root)
+                nodes = list_custom_nodes(self.custom_nodes_root)
+                self.send_json(
+                    {
+                        "ok": True,
+                        "mode": "read_only",
+                        "comfy_root": str(self.server.comfy_root),  # type: ignore[attr-defined]
+                        "model_count": len(models),
+                        "custom_node_count": len(nodes),
+                    }
+                )
+                return
+            if parsed.path == "/api/admin/models":
+                models = list_models(self.models_root)
+                self.send_json({"models": models, "count": len(models)})
+                return
+            if parsed.path == "/api/admin/nodes":
+                nodes = list_custom_nodes(self.custom_nodes_root)
+                self.send_json({"nodes": nodes, "count": len(nodes)})
+                return
+            if parsed.path == "/api/admin/model":
+                query = urllib.parse.parse_qs(parsed.query)
+                relative = query.get("path", [""])[0]
+                include_sha256 = query.get("sha256", ["true"])[0].lower() not in {"0", "false", "no"}
+                self.send_json(inspect_model(self.models_root, relative, include_sha256=include_sha256))
                 return
             if parsed.path == "/api/system-stats":
                 self.send_json(self.client.get("/system_stats"))
@@ -221,7 +264,15 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         try:
-            if not self.authorized():
+            admin = parsed.path.startswith("/api/admin/")
+            if not self.authorized(admin=admin):
+                return
+            if parsed.path == "/api/admin/diagnose-workflow":
+                body = self.read_json(MAX_PROMPT_BYTES)
+                workflow = body.get("workflow")
+                if not isinstance(workflow, dict) or not workflow:
+                    raise ValueError("Workflow must be a non-empty object")
+                self.send_json(diagnose_workflow(workflow, self.client.get("/object_info")))
                 return
             if parsed.path == "/api/input":
                 length = int(self.headers.get("Content-Length", "0"))
@@ -287,19 +338,27 @@ def build_server(
     access_token: str,
     allowed_clients: set[str],
     client: Any | None = None,
+    comfy_root: Path | None = None,
+    admin_token: str | None = None,
 ) -> ThreadingHTTPServer:
     token = validate_token(access_token)
+    admin_token = validate_token(admin_token or access_token)
     for address in allowed_clients:
         ip_address(address)
     if not is_loopback(host) and not allowed_clients:
         raise ValueError("At least one --allow-client address is required for LAN binding")
     comfy_client = client or ComfyClient(api_url)
     input_root, output_root = comfy_client.system_paths()
+    discovered_root = discover_comfy_root(Path(input_root), Path(output_root), comfy_root)
     server = ThreadingHTTPServer((host, port), ComfyGatewayHandler)
     server.comfy_client = comfy_client  # type: ignore[attr-defined]
     server.input_root = Path(input_root).resolve()  # type: ignore[attr-defined]
     server.output_root = Path(output_root).resolve()  # type: ignore[attr-defined]
+    server.comfy_root = discovered_root  # type: ignore[attr-defined]
+    server.models_root = discovered_root / "models"  # type: ignore[attr-defined]
+    server.custom_nodes_root = discovered_root / "custom_nodes"  # type: ignore[attr-defined]
     server.access_token = token  # type: ignore[attr-defined]
+    server.admin_token = admin_token  # type: ignore[attr-defined]
     server.allowed_clients = allowed_clients  # type: ignore[attr-defined]
     server.allowed_images = set()  # type: ignore[attr-defined]
     server.allowed_expressions = set()  # type: ignore[attr-defined]
@@ -312,9 +371,12 @@ def main() -> None:
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8189)
     parser.add_argument("--api", default=API_DEFAULT, help="Local ComfyUI API URL")
+    parser.add_argument("--comfy-root", help="ComfyUI installation root; auto-discovered from input/output folders when omitted")
     parser.add_argument("--allow-client", action="append", default=[], help="Laptop IPv4 allowed to use the gateway")
     parser.add_argument("--token-file", default=str(Path.home() / ".expression_wizard" / "comfy_gateway_token.txt"))
     parser.add_argument("--access-token", help="Explicit token; prefer token file or EXPRESSION_WIZARD_COMFY_TOKEN")
+    parser.add_argument("--admin-token-file", default=str(Path.home() / ".expression_wizard" / "comfy_gateway_admin_token.txt"))
+    parser.add_argument("--admin-token", help="Explicit read-only management token; prefer its token file")
     args = parser.parse_args()
 
     env_clients = [item.strip() for item in os.environ.get("EXPRESSION_WIZARD_ALLOWED_CLIENTS", "").split(",") if item.strip()]
@@ -322,8 +384,12 @@ def main() -> None:
     explicit = args.access_token or os.environ.get("EXPRESSION_WIZARD_COMFY_TOKEN")
     token_file = Path(args.token_file).expanduser().resolve()
     token, created = load_or_create_token(token_file, explicit)
+    admin_explicit = args.admin_token or os.environ.get("EXPRESSION_WIZARD_COMFY_ADMIN_TOKEN")
+    admin_token_file = Path(args.admin_token_file).expanduser().resolve()
+    admin_token, admin_created = load_or_create_token(admin_token_file, admin_explicit)
     try:
-        server = build_server(args.host, args.port, args.api, token, allowed_clients)
+        root = Path(args.comfy_root).expanduser().resolve() if args.comfy_root else None
+        server = build_server(args.host, args.port, args.api, token, allowed_clients, comfy_root=root, admin_token=admin_token)
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
 
@@ -331,10 +397,15 @@ def main() -> None:
     print(f"ComfyUI: {args.api}", flush=True)
     print(f"Listen: {args.host}:{args.port}", flush=True)
     print(f"Allowed laptop IPs: {', '.join(sorted(allowed_clients))}", flush=True)
+    print(f"ComfyUI root: {server.comfy_root}", flush=True)  # type: ignore[attr-defined]
     print(f"Access token: {token}", flush=True)
     print(f"Token file: {token_file}", flush=True)
     if created:
         print("A new persistent gateway token was created.", flush=True)
+    print(f"Read-only admin token: {admin_token}", flush=True)
+    print(f"Admin token file: {admin_token_file}", flush=True)
+    if admin_created:
+        print("A new persistent read-only admin token was created.", flush=True)
     print("Press Ctrl+C to stop", flush=True)
     try:
         server.serve_forever()

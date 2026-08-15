@@ -14,10 +14,12 @@ if str(WIZARD_DIR) not in sys.path:
     sys.path.insert(0, str(WIZARD_DIR))
 
 from comfy_gateway import build_server  # noqa: E402
+from comfy_management import ComfyManagementClient  # noqa: E402
 from comfy_transport import RemoteComfyTransport  # noqa: E402
 
 
 TOKEN = "gateway-test-token-with-24-chars"
+ADMIN_TOKEN = "admin-test-token-with-at-least-24-chars"
 
 
 class FakeComfyClient:
@@ -54,12 +56,15 @@ class ComfyGatewayTests(unittest.TestCase):
         root = Path(self.temp.name)
         self.input_root = root / "input"
         self.output_root = root / "output"
+        (root / "models" / "liveportrait").mkdir(parents=True)
+        (root / "custom_nodes" / "ComfyUI-AdvancedLivePortrait").mkdir(parents=True)
+        (root / "models" / "liveportrait" / "broken.safetensors").write_bytes(b"bad")
         (self.output_root / "remote-job").mkdir(parents=True)
         (self.output_root / "remote-job" / "result.png").write_bytes(b"remote-image")
         (self.output_root / "exp_data").mkdir()
         (self.output_root / "exp_data" / "smile.exp").write_bytes(b"remote-expression")
         self.client = FakeComfyClient(self.input_root, self.output_root)
-        self.server = build_server("127.0.0.1", 0, "http://127.0.0.1:8188", TOKEN, set(), self.client)
+        self.server = build_server("127.0.0.1", 0, "http://127.0.0.1:8188", TOKEN, set(), self.client, admin_token=ADMIN_TOKEN)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.url = f"http://127.0.0.1:{self.server.server_port}"
@@ -116,6 +121,31 @@ class ComfyGatewayTests(unittest.TestCase):
     def test_lan_binding_requires_an_allowed_client(self) -> None:
         with self.assertRaisesRegex(ValueError, "allow-client"):
             build_server("0.0.0.0", 0, "http://127.0.0.1:8188", TOKEN, set(), self.client)
+
+    def test_read_only_management_uses_separate_token(self) -> None:
+        request = urllib.request.Request(
+            self.url + "/api/admin/summary",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        with self.assertRaises(urllib.error.HTTPError) as wrong_scope:
+            urllib.request.urlopen(request, timeout=2)
+        self.assertEqual(wrong_scope.exception.code, 401)
+
+        management = ComfyManagementClient(self.url, ADMIN_TOKEN)
+        summary = management.summary()
+        self.assertEqual(summary["mode"], "read_only")
+        self.assertEqual(summary["model_count"], 1)
+        self.assertEqual(management.models("broken")["count"], 1)
+        inspected = management.inspect_model("liveportrait/broken.safetensors", include_sha256=False)
+        self.assertFalse(inspected["safetensors"]["valid"])
+        self.assertNotIn("sha256", inspected)
+        self.assertEqual(management.nodes("AdvancedLivePortrait")["count"], 1)
+
+        diagnosis = management.diagnose_workflow(
+            {"1": {"class_type": "MissingNode", "inputs": {}}}
+        )
+        self.assertFalse(diagnosis["valid_dependencies"])
+        self.assertEqual(diagnosis["missing_nodes"][0]["class_type"], "MissingNode")
 
 
 if __name__ == "__main__":

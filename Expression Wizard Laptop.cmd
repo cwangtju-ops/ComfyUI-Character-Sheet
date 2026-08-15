@@ -4,6 +4,11 @@ title Expression Wizard Laptop Backend
 
 set "EW_ROOT=%~dp0"
 set "EW_SERVER=%EW_ROOT%ComfyUI_Workflows\expression_wizard\server.py"
+if defined EXPRESSION_WIZARD_LOCAL_PORT (
+  set "EW_PORT=%EXPRESSION_WIZARD_LOCAL_PORT%"
+) else (
+  set "EW_PORT=8765"
+)
 
 if defined EXPRESSION_WIZARD_DEV_PYTHON (
   set "EW_PYTHON=%EXPRESSION_WIZARD_DEV_PYTHON%"
@@ -38,9 +43,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Starting the laptop-owned Expression Wizard backend at http://127.0.0.1:8765/
+echo Starting the laptop-owned Expression Wizard backend at http://127.0.0.1:%EW_PORT%/
 echo ComfyUI gateway: %EXPRESSION_WIZARD_COMFY_URL%
-"%EW_PYTHON%" "%EW_SERVER%" --host 127.0.0.1 --port 8765 --open-browser
+if not defined EXPRESSION_WIZARD_COMFY_ADMIN_TOKEN (
+  echo Read-only ComfyUI management: disabled ^(EXPRESSION_WIZARD_COMFY_ADMIN_TOKEN is not set^)
+) else (
+  echo Read-only ComfyUI management: enabled
+)
+"%EW_PYTHON%" "%EW_SERVER%" --host 127.0.0.1 --port %EW_PORT% --open-browser
 if errorlevel 1 (
   echo.
   echo Expression Wizard stopped with an error.

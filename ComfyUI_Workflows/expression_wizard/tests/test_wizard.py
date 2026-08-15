@@ -118,7 +118,7 @@ class WizardTests(unittest.TestCase):
         initialized = mcp_server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
         self.assertEqual(initialized["result"]["serverInfo"]["name"], "expression-wizard")
         tools = mcp_server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        self.assertEqual(len(tools["result"]["tools"]), 9)
+        self.assertEqual(len(tools["result"]["tools"]), 14)
 
     def test_mcp_tool_returns_structured_content(self) -> None:
         with patch.object(mcp_server, "call_tool", return_value={"ok": True}):

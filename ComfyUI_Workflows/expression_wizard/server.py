@@ -30,6 +30,7 @@ from review_server import ReviewHandler, discover_batches  # noqa: E402
 from lys_calibration import ProjectPaths  # noqa: E402
 from wizard_core import MAX_UPLOAD_BYTES, WizardService  # noqa: E402
 from comfy_transport import RemoteComfyTransport  # noqa: E402
+from comfy_management import ComfyManagementClient  # noqa: E402
 
 
 STATIC_ROOT = HERE / "static"
@@ -142,6 +143,13 @@ class ExpressionWizardHandler(ReviewHandler):
     @property
     def sessions(self) -> SessionStore:
         return self.server.sessions  # type: ignore[attr-defined]
+
+    @property
+    def management(self) -> ComfyManagementClient:
+        client = self.server.management  # type: ignore[attr-defined]
+        if client is None:
+            raise ConnectionError("Read-only ComfyUI management is not configured")
+        return client
 
     def send_error_json(self, status: int, error: Exception | str) -> None:
         self.send_json({"ok": False, "error": str(error)}, status)
@@ -288,6 +296,23 @@ class ExpressionWizardHandler(ReviewHandler):
             if path == "/api/explore/jobs":
                 self.send_json({"jobs": self.wizard.list_jobs()})
                 return
+            if path == "/api/manage/summary":
+                self.send_json(self.management.summary())
+                return
+            if path == "/api/manage/models":
+                query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("query", [None])[0]
+                self.send_json(self.management.models(query))
+                return
+            if path == "/api/manage/nodes":
+                query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("query", [None])[0]
+                self.send_json(self.management.nodes(query))
+                return
+            if path == "/api/manage/model":
+                query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                relative = query.get("path", [""])[0]
+                include_sha256 = query.get("sha256", ["true"])[0].lower() not in {"0", "false", "no"}
+                self.send_json(self.management.inspect_model(relative, include_sha256))
+                return
             parts = self.explore_parts(path)
             if len(parts) == 2 and parts[0] == "sources":
                 self.serve_file_under(self.wizard.paths.lys_root, {"anchor_1": "anchor 1.png", "anchor_2": "anchor 2.png", "anchor_3": "anchor 3.png"}.get(parts[1], "__missing__"))
@@ -365,6 +390,13 @@ class ExpressionWizardHandler(ReviewHandler):
             if path == "/api/explore/validate-workflow":
                 body = self.read_json_body(maximum=10 * 1024 * 1024)
                 self.send_json(self.wizard.validate_workflow(body.get("workflow")))
+                return
+            if path == "/api/manage/diagnose-workflow":
+                body = self.read_json_body(maximum=10 * 1024 * 1024)
+                workflow = body.get("workflow")
+                if not isinstance(workflow, dict) or not workflow:
+                    raise ValueError("Workflow must be a non-empty object")
+                self.send_json(self.management.diagnose_workflow(workflow))
                 return
             parts = self.explore_parts(path)
             if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "retry":
@@ -468,6 +500,8 @@ def main() -> None:
     server.access_token = token  # type: ignore[attr-defined]
     server.sessions = SessionStore()  # type: ignore[attr-defined]
     server.lan_mode = lan_mode  # type: ignore[attr-defined]
+    admin_token = os.environ.get("EXPRESSION_WIZARD_COMFY_ADMIN_TOKEN", "")
+    server.management = ComfyManagementClient(gateway_url, admin_token) if gateway_url and admin_token else None  # type: ignore[attr-defined]
 
     local_url = f"http://127.0.0.1:{args.port}/"
     print("Expression Wizard", flush=True)

@@ -175,6 +175,12 @@ The gateway prints a persistent token. Leave this window running. It binds port
 8189 but accepts non-loopback requests only from the listed laptop IP, and every
 operation also requires the token.
 
+The gateway prints two different persistent tokens:
+
+- `Access token` permits only the constrained generation transport.
+- `Read-only admin token` permits model/node inventory, hashes, safetensors
+  validation, and workflow dependency diagnosis. It cannot modify the desktop.
+
 ### Laptop
 
 In a PowerShell in the laptop checkout, point EW at the local anchor/data folder
@@ -184,13 +190,25 @@ and desktop gateway:
 $env:EXPRESSION_WIZARD_DATA_ROOT = 'C:\Codex Projects\ComfyUI\Character Sheet_Lys'
 $env:EXPRESSION_WIZARD_COMFY_URL = 'http://192.168.2.200:8189'
 $env:EXPRESSION_WIZARD_COMFY_TOKEN = 'paste-the-token-printed-on-the-desktop'
+$env:EXPRESSION_WIZARD_COMFY_ADMIN_TOKEN = 'paste-the-read-only-admin-token'
+$env:EXPRESSION_WIZARD_LOCAL_PORT = '8775'
 & '.\Expression Wizard Laptop.cmd'
 ```
 
-The browser opens `http://127.0.0.1:8765/`. In this mode neither the backend nor
+The browser opens the configured local port, `http://127.0.0.1:8775/` in this
+example. In this mode neither the backend nor
 the data directory is exposed to the Wi-Fi network. Stop the earlier desktop EW
 LAN backend and the laptop UI development proxy once this distributed mode is
 confirmed.
+
+Read-only diagnostics are then available through the CLI:
+
+```powershell
+python .\ComfyUI_Workflows\expression_wizard\cli.py comfy-summary
+python .\ComfyUI_Workflows\expression_wizard\cli.py comfy-models --query liveportrait
+python .\ComfyUI_Workflows\expression_wizard\cli.py comfy-model 'liveportrait/example.safetensors'
+python .\ComfyUI_Workflows\expression_wizard\cli.py comfy-nodes --query portrait
+```
 
 To remove only the gateway firewall rule later:
 

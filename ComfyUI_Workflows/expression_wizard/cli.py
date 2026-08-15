@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,11 @@ def parser() -> argparse.ArgumentParser:
     sub = root.add_subparsers(dest="command", required=True)
     sub.add_parser("schema")
     sub.add_parser("list")
+    sub.add_parser("comfy-summary")
+    models = sub.add_parser("comfy-models"); models.add_argument("--query", default="")
+    model = sub.add_parser("comfy-model"); model.add_argument("path"); model.add_argument("--no-sha256", action="store_true")
+    nodes = sub.add_parser("comfy-nodes"); nodes.add_argument("--query", default="")
+    diagnose_comfy = sub.add_parser("diagnose-comfy-workflow"); diagnose_comfy.add_argument("workflow", type=Path)
     get = sub.add_parser("get"); get.add_argument("job_id")
     cancel = sub.add_parser("cancel"); cancel.add_argument("job_id")
     retry = sub.add_parser("retry"); retry.add_argument("job_id"); retry.add_argument("--wait", action="store_true")
@@ -67,6 +73,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if args.command == "schema": result = rest_request("GET", "/api/explore/config")
     elif args.command == "list": result = rest_request("GET", "/api/explore/jobs")
+    elif args.command == "comfy-summary": result = rest_request("GET", "/api/manage/summary")
+    elif args.command == "comfy-models": result = rest_request("GET", "/api/manage/models?" + urllib.parse.urlencode({"query": args.query}))
+    elif args.command == "comfy-model": result = rest_request("GET", "/api/manage/model?" + urllib.parse.urlencode({"path": args.path, "sha256": str(not args.no_sha256).lower()}))
+    elif args.command == "comfy-nodes": result = rest_request("GET", "/api/manage/nodes?" + urllib.parse.urlencode({"query": args.query}))
+    elif args.command == "diagnose-comfy-workflow": result = rest_request("POST", "/api/manage/diagnose-workflow", {"workflow": json.loads(args.workflow.read_text(encoding="utf-8"))})
     elif args.command == "get": result = rest_request("GET", f"/api/explore/jobs/{args.job_id}")
     elif args.command == "cancel": result = rest_request("DELETE", f"/api/explore/jobs/{args.job_id}")
     elif args.command == "retry":

@@ -22,7 +22,7 @@ or image-wash the source.
   and retry without regenerating completed candidates.
 - Exact Comfy workflow JSON, binary `.exp`, tensor JSON/CSV, hashes, manifests,
   and numeric side-effect analysis.
-- REST, CLI, and nine structured MCP tools.
+- REST, CLI, and fourteen structured MCP tools.
 - Backward-compatible calibration reviewer routes.
 
 ## Requirements
@@ -99,6 +99,13 @@ runs `Expression Wizard Comfy Gateway.cmd` on port 8189; the laptop runs
 
 See [LAN_USAGE.md](LAN_USAGE.md) for the firewall, token, and environment setup.
 
+The desktop gateway also creates a separate read-only administrator token. When
+the laptop backend receives it as `EXPRESSION_WIZARD_COMFY_ADMIN_TOKEN`, the CLI
+and Codex MCP bridge can inventory installed custom nodes and models, validate
+safetensors structure, calculate a requested model's SHA-256, and diagnose
+workflow dependencies. These endpoints cannot download, install, delete, or
+execute system commands.
+
 ## CLI
 
 The server must be running before using the CLI.
@@ -139,6 +146,11 @@ Open a new Codex task after editing the configuration. The MCP bridge exposes:
 - `analyze_experiment`
 - `get_candidate_workflow`
 - `validate_workflow`
+- `get_comfy_diagnostic_summary`
+- `list_comfy_models`
+- `inspect_comfy_model`
+- `list_comfy_custom_nodes`
+- `diagnose_comfy_workflow`
 
 ## REST API
 
