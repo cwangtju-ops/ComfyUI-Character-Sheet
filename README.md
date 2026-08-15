@@ -72,6 +72,33 @@ python .\ComfyUI_Workflows\expression_wizard\server.py `
   --api http://127.0.0.1:8188 --open-browser
 ```
 
+### Laptop UI development
+
+Keep the production backend and ComfyUI running on the desktop in LAN mode.
+On the laptop, set the same remote URL and token used by the CLI/MCP bridge,
+then start the development launcher:
+
+```powershell
+$env:EXPRESSION_WIZARD_URL = 'http://192.168.2.200:8765'
+$env:EXPRESSION_WIZARD_TOKEN = 'paste-the-desktop-token'
+& '.\Expression Wizard Dev.cmd'
+```
+
+The launcher opens `http://127.0.0.1:8766/`. HTML, JavaScript, and CSS are
+served directly from the laptop checkout with caching disabled, while `/api/`
+requests and generated images are authenticated and proxied to the desktop.
+The development proxy binds to loopback only and never sends the desktop token
+to browser JavaScript.
+
+### Laptop-owned backend with desktop ComfyUI
+
+Expression Wizard can keep its anchors, jobs, generated previews, and `.exp`
+copies on the laptop while using only the desktop GPU and ComfyUI. The desktop
+runs `Expression Wizard Comfy Gateway.cmd` on port 8189; the laptop runs
+`Expression Wizard Laptop.cmd`. ComfyUI itself remains on `127.0.0.1:8188`.
+
+See [LAN_USAGE.md](LAN_USAGE.md) for the firewall, token, and environment setup.
+
 ## CLI
 
 The server must be running before using the CLI.

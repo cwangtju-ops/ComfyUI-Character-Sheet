@@ -112,6 +112,92 @@ Because the launcher can run directly from the Git checkout while `EXPRESSION_WI
 to test the new code. Commit generated images only when deliberately adding
 test fixtures; `ComfyUI_Generated/` is ignored by default.
 
+### Develop the UI without redeploying the backend
+
+For HTML, CSS, and JavaScript work, leave the stable backend running on the
+desktop and launch the UI development proxy from the laptop checkout:
+
+```powershell
+& '.\Expression Wizard Dev.cmd'
+```
+
+Open `http://127.0.0.1:8766/`. Static files are read from the laptop on every
+request, so a browser refresh shows local UI changes immediately. API calls,
+uploads, job operations, and generated images are forwarded to the desktop
+backend with the bearer token injected by the local proxy. The token is not
+available to browser JavaScript.
+
+This mode deliberately listens only on the laptop loopback interface. It is a
+development convenience, not another LAN service. Python backend changes still
+require deployment to the desktop until the remote Comfy transport phase is
+implemented.
+
+## Distributed mode: backend and data on the laptop
+
+This mode keeps only ComfyUI and the GPU workload on the desktop:
+
+```text
+Laptop browser / Codex -> laptop Expression Wizard (127.0.0.1:8765)
+                                  |
+                                  | authenticated TCP 8189
+                                  v
+                         desktop Comfy gateway
+                                  |
+                                  | localhost TCP 8188 + Comfy files
+                                  v
+                         desktop ComfyUI / GPU
+```
+
+The laptop owns anchors, uploads, job manifests, prompts, preview copies, and
+`.exp` copies. The desktop gateway retains only ComfyUI's normal input/output
+artifacts.
+
+### Desktop
+
+After updating the desktop checkout, open an Administrator PowerShell once:
+
+```powershell
+.\scripts\Setup-LanAccess.ps1 `
+  -LaptopAddress 192.168.2.242 `
+  -Port 8189 `
+  -RuleName 'Expression Wizard Comfy Gateway'
+```
+
+Then use an ordinary PowerShell in the repository:
+
+```powershell
+$env:EXPRESSION_WIZARD_PYTHON = 'C:\Comfy Powerhouse\Comfy Powerhouse\ComfyUI\.venv\Scripts\python.exe'
+$env:EXPRESSION_WIZARD_ALLOWED_CLIENTS = '192.168.2.242'
+& '.\Expression Wizard Comfy Gateway.cmd'
+```
+
+The gateway prints a persistent token. Leave this window running. It binds port
+8189 but accepts non-loopback requests only from the listed laptop IP, and every
+operation also requires the token.
+
+### Laptop
+
+In a PowerShell in the laptop checkout, point EW at the local anchor/data folder
+and desktop gateway:
+
+```powershell
+$env:EXPRESSION_WIZARD_DATA_ROOT = 'C:\Codex Projects\ComfyUI\Character Sheet_Lys'
+$env:EXPRESSION_WIZARD_COMFY_URL = 'http://192.168.2.200:8189'
+$env:EXPRESSION_WIZARD_COMFY_TOKEN = 'paste-the-token-printed-on-the-desktop'
+& '.\Expression Wizard Laptop.cmd'
+```
+
+The browser opens `http://127.0.0.1:8765/`. In this mode neither the backend nor
+the data directory is exposed to the Wi-Fi network. Stop the earlier desktop EW
+LAN backend and the laptop UI development proxy once this distributed mode is
+confirmed.
+
+To remove only the gateway firewall rule later:
+
+```powershell
+.\scripts\Remove-LanAccess.ps1 -RuleName 'Expression Wizard Comfy Gateway'
+```
+
 ## Security boundaries
 
 - The firewall rule is Private-profile only and restricted to one laptop IPv4.

@@ -36,13 +36,14 @@ from lys_calibration import (  # noqa: E402
     copy_verified,
     export_exp,
     image_pixel_hash,
-    output_image_from_history,
     read_json,
     sha256_file,
     slug,
     utc_now,
     write_json,
 )
+
+from comfy_transport import ComfyTransport, LocalComfyTransport  # noqa: E402
 
 
 SCHEMA_VERSION = 1
@@ -100,8 +101,8 @@ def default_parameter_schema() -> dict[str, dict[str, Any]]:
     }
 
 
-def live_expression_schema(api_url: str = API_DEFAULT) -> dict[str, Any]:
-    client = ComfyClient(api_url)
+def live_expression_schema(api_url: str = API_DEFAULT, transport: ComfyTransport | None = None) -> dict[str, Any]:
+    client = transport or ComfyClient(api_url)
     info = client.get("/object_info/ExpressionEditor").get("ExpressionEditor")
     if not info:
         raise RuntimeError("The running ComfyUI does not expose ExpressionEditor")
@@ -327,9 +328,10 @@ class WizardPaths:
 
 
 class WizardService:
-    def __init__(self, lys_root: Path, api_url: str = API_DEFAULT):
+    def __init__(self, lys_root: Path, api_url: str = API_DEFAULT, transport: ComfyTransport | None = None):
         self.paths = WizardPaths(lys_root)
         self.api_url = api_url.rstrip("/")
+        self.transport = transport or LocalComfyTransport(self.api_url)
         self._lock = threading.RLock()
         self._worker: threading.Thread | None = None
         self._cancel: dict[str, threading.Event] = {}
@@ -337,15 +339,14 @@ class WizardService:
 
     def comfy_status(self) -> dict[str, Any]:
         try:
-            client = ComfyClient(self.api_url, timeout=2.0)
-            stats = client.get("/system_stats")
-            info = client.get("/object_info/ExpressionEditor")
+            stats = self.transport.get("/system_stats")
+            info = self.transport.get("/object_info/ExpressionEditor")
             return {"online": bool(info.get("ExpressionEditor")), "api_url": self.api_url, "system": stats.get("system", {})}
         except Exception as exc:
             return {"online": False, "api_url": self.api_url, "error": str(exc)}
 
     def schema(self) -> dict[str, Any]:
-        return live_expression_schema(self.api_url)
+        return live_expression_schema(self.api_url, self.transport)
 
     def lys_sources(self) -> list[dict[str, Any]]:
         result = []
@@ -506,11 +507,9 @@ class WizardService:
             manifest = read_json(manifest_path)
             completed = {item["candidate_id"] for item in manifest["candidates"]}
             self._update_job(job_id, status="running", started_at=read_json(job_dir / "job.json").get("started_at") or utc_now(), error=None)
-            client = ComfyClient(self.api_url)
-            input_root, output_root = client.system_paths()
             source_path = job_dir / spec["source"]["path"]
             input_name = f"Expression_Wizard/{spec['source']['sha256'][:16]}_{job_id}.png"
-            copy_verified(source_path, input_root / Path(input_name))
+            input_name = self.transport.stage_input(source_path, input_name)
             for candidate in spec["candidates"]:
                 if candidate["id"] in completed:
                     continue
@@ -531,21 +530,17 @@ class WizardService:
                 )
                 prompt_path = job_dir / "prompts" / f"{candidate_id}.json"
                 write_json(prompt_path, prompt)
-                prompt_id = client.queue(prompt)
-                history = client.wait(prompt_id, timeout=300.0)
-                output = output_image_from_history(history)
-                generated = output_root / output.get("subfolder", "") / output["filename"]
+                prompt_id, history = self.transport.execute(prompt, timeout=300.0)
                 image_path = job_dir / "images" / f"{candidate_id}.png"
-                copy_verified(generated, image_path)
+                self.transport.materialize_image(history, image_path)
                 dimensions = safe_image_dimensions(image_path)
                 expected = (int(spec["source"]["width"]), int(spec["source"]["height"]))
                 if dimensions != expected:
                     raise RuntimeError(f"{candidate_id} changed canvas size from {expected} to {dimensions}")
-                exp_source = output_root / "exp_data" / f"{exp_name}.exp"
                 exp_binary = job_dir / "exp_data" / f"{candidate_id}.exp"
                 exp_json = job_dir / "exp_data" / f"{candidate_id}.json"
                 exp_csv = job_dir / "exp_data" / f"{candidate_id}.csv"
-                copy_verified(exp_source, exp_binary)
+                self.transport.materialize_expression(exp_name, exp_binary)
                 expression = export_exp(exp_binary, exp_json, exp_csv)
                 record = {
                     "candidate_id": candidate_id,
@@ -648,7 +643,7 @@ class WizardService:
     def validate_workflow(self, workflow: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(workflow, dict) or not workflow:
             raise ValueError("Workflow must be a non-empty Comfy API prompt object")
-        object_info = ComfyClient(self.api_url).get("/object_info")
+        object_info = self.transport.get("/object_info")
         errors, warnings = [], []
         for node_id, node in workflow.items():
             if not isinstance(node, dict) or "class_type" not in node or "inputs" not in node:

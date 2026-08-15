@@ -29,6 +29,7 @@ if str(CALIBRATION_DIR) not in sys.path:
 from review_server import ReviewHandler, discover_batches  # noqa: E402
 from lys_calibration import ProjectPaths  # noqa: E402
 from wizard_core import MAX_UPLOAD_BYTES, WizardService  # noqa: E402
+from comfy_transport import RemoteComfyTransport  # noqa: E402
 
 
 STATIC_ROOT = HERE / "static"
@@ -426,6 +427,8 @@ def main() -> None:
     parser.add_argument("--host", default=None, help="Bind address; defaults to 127.0.0.1 or 0.0.0.0 with --lan")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--api", default="http://127.0.0.1:8188")
+    parser.add_argument("--comfy-gateway", help="Remote desktop gateway URL; may also use EXPRESSION_WIZARD_COMFY_URL")
+    parser.add_argument("--comfy-token", help="Remote gateway token; prefer EXPRESSION_WIZARD_COMFY_TOKEN")
     parser.add_argument("--data-root", help="Folder containing anchors and ComfyUI_Generated; may also use EXPRESSION_WIZARD_DATA_ROOT")
     parser.add_argument("--lan", action="store_true", help="Listen on the LAN and require token authentication")
     parser.add_argument("--token-file", help="Persistent access-token file; generated when missing")
@@ -441,7 +444,16 @@ def main() -> None:
             paths = project_paths_with_data_root(paths, Path(data_root_text))
         except ValueError as exc:
             parser.error(str(exc))
-    wizard = WizardService(paths.lys_root, args.api)
+    gateway_url = args.comfy_gateway or os.environ.get("EXPRESSION_WIZARD_COMFY_URL")
+    if gateway_url:
+        gateway_token = args.comfy_token or os.environ.get("EXPRESSION_WIZARD_COMFY_TOKEN", "")
+        try:
+            transport = RemoteComfyTransport(gateway_url, gateway_token)
+        except ValueError as exc:
+            parser.error(str(exc))
+        wizard = WizardService(paths.lys_root, gateway_url, transport)
+    else:
+        wizard = WizardService(paths.lys_root, args.api)
     lan_mode = not is_loopback_host(host)
     token: str | None = None
     token_file = Path(args.token_file).expanduser().resolve() if args.token_file else wizard.paths.root / "_server" / "access_token.txt"
@@ -468,7 +480,8 @@ def main() -> None:
         else:
             print("Laptop: use this desktop's private IPv4 address", flush=True)
     print(f"Data root: {paths.lys_root}", flush=True)
-    print(f"ComfyUI: {args.api}", flush=True)
+    print(f"ComfyUI: {gateway_url or args.api}", flush=True)
+    print(f"Comfy transport: {'remote gateway' if gateway_url else 'local filesystem'}", flush=True)
     if token:
         print(f"Access token: {token}", flush=True)
         if explicit_token:

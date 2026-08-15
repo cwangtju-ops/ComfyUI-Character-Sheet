@@ -8,11 +8,14 @@ param(
     [string]$LaptopAddress,
 
     [ValidateRange(1024, 65535)]
-    [int]$Port = 8765
+    [int]$Port = 8765,
+
+    [ValidateNotNullOrEmpty()]
+    [string]$RuleName = 'Expression Wizard LAN'
 )
 
 $ErrorActionPreference = 'Stop'
-$ruleName = 'Expression Wizard LAN'
+$ruleName = $RuleName
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {

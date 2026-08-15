@@ -1,8 +1,11 @@
 [CmdletBinding()]
-param()
+param(
+    [ValidateNotNullOrEmpty()]
+    [string]$RuleName = 'Expression Wizard LAN'
+)
 
 $ErrorActionPreference = 'Stop'
-$ruleName = 'Expression Wizard LAN'
+$ruleName = $RuleName
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
