@@ -81,6 +81,19 @@ def load_or_create_token(path: Path, explicit: str | None = None) -> tuple[str, 
     return token, True
 
 
+def project_paths_with_data_root(paths: ProjectPaths, data_root: Path) -> ProjectPaths:
+    data_root = data_root.expanduser().resolve()
+    if not data_root.is_dir():
+        raise ValueError(f"Expression Wizard data root does not exist: {data_root}")
+    return ProjectPaths(
+        calibration_dir=paths.calibration_dir,
+        workflow_dir=paths.workflow_dir,
+        lys_root=data_root,
+        generated_root=data_root / "ComfyUI_Generated" / "Calibration",
+        specs_dir=paths.specs_dir,
+        recipe_library=paths.recipe_library,
+    )
+
 class SessionStore:
     def __init__(self, ttl_seconds: int = SESSION_TTL_SECONDS):
         self.ttl_seconds = ttl_seconds
@@ -413,6 +426,7 @@ def main() -> None:
     parser.add_argument("--host", default=None, help="Bind address; defaults to 127.0.0.1 or 0.0.0.0 with --lan")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--api", default="http://127.0.0.1:8188")
+    parser.add_argument("--data-root", help="Folder containing anchors and ComfyUI_Generated; may also use EXPRESSION_WIZARD_DATA_ROOT")
     parser.add_argument("--lan", action="store_true", help="Listen on the LAN and require token authentication")
     parser.add_argument("--token-file", help="Persistent access-token file; generated when missing")
     parser.add_argument("--access-token", help="Explicit access token (prefer the token file or environment variable)")
@@ -421,6 +435,12 @@ def main() -> None:
 
     host = args.host or ("0.0.0.0" if args.lan else "127.0.0.1")
     paths = ProjectPaths.discover(CALIBRATION_DIR / "lys_calibration.py")
+    data_root_text = args.data_root or os.environ.get("EXPRESSION_WIZARD_DATA_ROOT")
+    if data_root_text:
+        try:
+            paths = project_paths_with_data_root(paths, Path(data_root_text))
+        except ValueError as exc:
+            parser.error(str(exc))
     wizard = WizardService(paths.lys_root, args.api)
     lan_mode = not is_loopback_host(host)
     token: str | None = None
@@ -447,6 +467,7 @@ def main() -> None:
                 print(f"Laptop: http://{address}:{args.port}/", flush=True)
         else:
             print("Laptop: use this desktop's private IPv4 address", flush=True)
+    print(f"Data root: {paths.lys_root}", flush=True)
     print(f"ComfyUI: {args.api}", flush=True)
     if token:
         print(f"Access token: {token}", flush=True)

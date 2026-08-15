@@ -42,6 +42,7 @@ Python used by the launcher:
 
 ```powershell
 $env:EXPRESSION_WIZARD_PYTHON = 'C:\path\to\ComfyUI\.venv\Scripts\python.exe'
+$env:EXPRESSION_WIZARD_DATA_ROOT = 'C:\Codex Projects\ComfyUI\Character Sheet_Lys'
 & '.\Expression Wizard LAN.cmd'
 ```
 
@@ -107,7 +108,7 @@ git switch your-feature-branch
 git pull --ff-only
 ```
 
-Stop the desktop backend with Ctrl+C and restart `Expression Wizard LAN.cmd`
+Because the launcher can run directly from the Git checkout while `EXPRESSION_WIZARD_DATA_ROOT` points at the Lys workspace, no source-file copying is required. Stop the desktop backend with Ctrl+C and restart `Expression Wizard LAN.cmd`
 to test the new code. Commit generated images only when deliberately adding
 test fixtures; `ComfyUI_Generated/` is ignored by default.
 

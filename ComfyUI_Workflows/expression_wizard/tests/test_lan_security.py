@@ -41,6 +41,14 @@ class LanSecurityTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 server.load_or_create_token(Path(directory) / "token.txt", "short")
 
+    def test_data_root_override_preserves_code_paths(self) -> None:
+        original = server.ProjectPaths.discover(server.CALIBRATION_DIR / "lys_calibration.py")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            overridden = server.project_paths_with_data_root(original, root)
+            self.assertEqual(overridden.lys_root, root)
+            self.assertEqual(overridden.generated_root, root / "ComfyUI_Generated" / "Calibration")
+            self.assertEqual(overridden.calibration_dir, original.calibration_dir)
     def test_sessions_expire_and_can_be_revoked(self) -> None:
         sessions = server.SessionStore(ttl_seconds=1)
         session_id = sessions.issue()
