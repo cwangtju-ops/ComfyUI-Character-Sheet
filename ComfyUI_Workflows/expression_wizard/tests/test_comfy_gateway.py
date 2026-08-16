@@ -8,6 +8,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from PIL import Image
+
 
 WIZARD_DIR = Path(__file__).resolve().parents[1]
 if str(WIZARD_DIR) not in sys.path:
@@ -37,7 +39,15 @@ class FakeComfyClient:
         if path == "/object_info/ExpressionEditor":
             return {"ExpressionEditor": {"input": {"required": {}}}}
         if path == "/object_info":
-            return {"ExpressionEditor": {"input": {"required": {}}}}
+            return {
+                "ExpressionEditor": {"input": {"required": {}}},
+                "CheckpointLoaderSimple": {"input": {"required": {"ckpt_name": [["cyberrealisticPony_semiRealV6.safetensors"], {}]}}},
+                "CLIPTextEncode": {"input": {"required": {}}},
+                "EmptyLatentImage": {"input": {"required": {}}},
+                "KSampler": {"input": {"required": {"sampler_name": [["dpmpp_2m_sde"], {}], "scheduler": [["karras"], {}]}}},
+                "VAEDecode": {"input": {"required": {}}},
+                "SaveImage": {"input": {"required": {}}},
+            }
         raise AssertionError(path)
 
     def queue(self, prompt: dict) -> str:
@@ -46,8 +56,9 @@ class FakeComfyClient:
 
     def wait(self, prompt_id: str, timeout: float) -> dict:
         assert prompt_id == "remote-prompt-1"
-        assert timeout == 42.0
-        return {"outputs": {"3": {"images": [{"filename": "result.png", "subfolder": "remote-job"}]}}}
+        assert timeout in {42.0, 600.0}
+        node_id = "7" if "7" in self.queued else "3"
+        return {"outputs": {node_id: {"images": [{"filename": "result.png", "subfolder": "remote-job"}]}}}
 
 
 class ComfyGatewayTests(unittest.TestCase):
@@ -60,7 +71,7 @@ class ComfyGatewayTests(unittest.TestCase):
         (root / "custom_nodes" / "ComfyUI-AdvancedLivePortrait").mkdir(parents=True)
         (root / "models" / "liveportrait" / "broken.safetensors").write_bytes(b"bad")
         (self.output_root / "remote-job").mkdir(parents=True)
-        (self.output_root / "remote-job" / "result.png").write_bytes(b"remote-image")
+        Image.new("RGB", (512, 512), "purple").save(self.output_root / "remote-job" / "result.png")
         (self.output_root / "exp_data").mkdir()
         (self.output_root / "exp_data" / "smile.exp").write_bytes(b"remote-expression")
         self.client = FakeComfyClient(self.input_root, self.output_root)
@@ -97,10 +108,30 @@ class ComfyGatewayTests(unittest.TestCase):
 
         image = Path(self.temp.name) / "wizard" / "candidate.png"
         transport.materialize_image(history, image)
-        self.assertEqual(image.read_bytes(), b"remote-image")
+        self.assertEqual(image.read_bytes(), (self.output_root / "remote-job" / "result.png").read_bytes())
         expression = Path(self.temp.name) / "wizard" / "candidate.exp"
         transport.materialize_expression("smile", expression)
         self.assertEqual(expression.read_bytes(), b"remote-expression")
+
+    def test_constrained_smoke_test_uses_fixed_core_workflow(self) -> None:
+        transport = RemoteComfyTransport(self.url, TOKEN)
+        prompt_id, history, config = transport.smoke_test(
+            {"checkpoint": "cyberrealisticPony_semiRealV6.safetensors", "width": 512, "height": 512, "steps": 4}
+        )
+        self.assertEqual(prompt_id, "remote-prompt-1")
+        self.assertEqual(config["checkpoint"], "cyberrealisticPony_semiRealV6.safetensors")
+        self.assertEqual({node["class_type"] for node in self.client.queued.values()}, {
+            "CheckpointLoaderSimple", "CLIPTextEncode", "EmptyLatentImage", "KSampler", "VAEDecode", "SaveImage"
+        })
+        image = Path(self.temp.name) / "smoke.png"
+        transport.materialize_image(history, image, node_id="7")
+        with Image.open(image) as generated:
+            self.assertEqual(generated.size, (512, 512))
+
+    def test_smoke_test_rejects_uninstalled_checkpoint(self) -> None:
+        transport = RemoteComfyTransport(self.url, TOKEN)
+        with self.assertRaisesRegex(RuntimeError, "not installed"):
+            transport.smoke_test({"checkpoint": "missing.safetensors"})
 
     def test_gateway_rejects_missing_token_and_path_traversal(self) -> None:
         with self.assertRaises(urllib.error.HTTPError) as unauthorized:

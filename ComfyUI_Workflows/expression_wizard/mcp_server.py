@@ -23,6 +23,7 @@ TOOLS = [
     {"name": "inspect_comfy_model", "description": "Inspect one desktop ComfyUI model by relative path, optionally computing SHA-256; safetensors files also receive structural validation.", "inputSchema": {"type": "object", "required": ["path"], "properties": {"path": {"type": "string"}, "include_sha256": {"type": "boolean", "default": True}}, "additionalProperties": False}},
     {"name": "list_comfy_custom_nodes", "description": "List installed desktop ComfyUI custom-node folders, Git revisions when available, and requirements metadata.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "additionalProperties": False}},
     {"name": "diagnose_comfy_workflow", "description": "Diagnose missing custom-node classes and unavailable model selections in a ComfyUI API workflow without executing it.", "inputSchema": {"type": "object", "required": ["workflow"], "properties": {"workflow": {"type": "object"}}, "additionalProperties": False}},
+    {"name": "run_comfy_smoke_test", "description": "Generate one image with a constrained core-node ComfyUI text-to-image workflow and copy it into laptop storage.", "inputSchema": {"type": "object", "required": ["checkpoint"], "properties": {"checkpoint": {"type": "string"}, "positive": {"type": "string"}, "negative": {"type": "string"}, "width": {"type": "integer", "minimum": 512, "maximum": 1024, "multipleOf": 64}, "height": {"type": "integer", "minimum": 512, "maximum": 1024, "multipleOf": 64}, "steps": {"type": "integer", "minimum": 1, "maximum": 40}, "cfg": {"type": "number", "minimum": 1, "maximum": 15}, "seed": {"type": "integer", "minimum": 0}, "sampler_name": {"type": "string"}, "scheduler": {"type": "string"}}, "additionalProperties": False}},
 ]
 
 
@@ -47,6 +48,7 @@ def call_tool(name: str, arguments: dict[str, Any]) -> Any:
         query = urllib.parse.urlencode({"query": arguments.get("query", "")})
         return rest_request("GET", f"/api/manage/nodes?{query}")
     if name == "diagnose_comfy_workflow": return rest_request("POST", "/api/manage/diagnose-workflow", {"workflow": arguments["workflow"]})
+    if name == "run_comfy_smoke_test": return rest_request("POST", "/api/manage/smoke-test", arguments)
     raise ValueError(f"Unknown Expression Wizard tool: {name}")
 
 

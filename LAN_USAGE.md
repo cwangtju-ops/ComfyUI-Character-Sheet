@@ -211,6 +211,35 @@ python .\ComfyUI_Workflows\expression_wizard\cli.py comfy-model 'liveportrait/ex
 python .\ComfyUI_Workflows\expression_wizard\cli.py comfy-nodes --query portrait
 ```
 
+To isolate the distributed ComfyUI connection from AdvancedLivePortrait, run a
+single fixed text-to-image smoke test from the laptop while both PowerShell
+services remain open:
+
+```powershell
+$body = @{
+  checkpoint = 'cyberrealisticPony_semiRealV6.safetensors'
+  width = 768
+  height = 768
+  steps = 20
+  cfg = 6
+  seed = 20260816
+  sampler_name = 'dpmpp_2m_sde'
+  scheduler = 'karras'
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri 'http://127.0.0.1:8775/api/manage/smoke-test' `
+  -Method POST `
+  -ContentType 'application/json' `
+  -Body $body
+```
+
+The desktop gateway accepts only the fixed seven-node core workflow and checks
+the checkpoint, sampler, scheduler, dimensions, step count, CFG, seed, and
+prompt lengths against bounded values. The returned `image.path` points to the
+PNG copied under the laptop's `ComfyUI_Generated\Expression_Wizard\_smoke_tests`
+folder.
+
 To remove only the gateway firewall rule later:
 
 ```powershell

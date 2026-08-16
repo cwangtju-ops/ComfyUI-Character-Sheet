@@ -35,7 +35,10 @@ class ComfyTransport(Protocol):
     def execute(self, prompt: dict[str, Any], timeout: float) -> tuple[str, dict[str, Any]]:
         """Queue a prompt and wait for its history record."""
 
-    def materialize_image(self, history: dict[str, Any], destination: Path) -> dict[str, Any]:
+    def smoke_test(self, request: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, Any]]:
+        """Run the gateway's constrained core-node text-to-image workflow."""
+
+    def materialize_image(self, history: dict[str, Any], destination: Path, node_id: str = "3") -> dict[str, Any]:
         """Copy the generated image into Expression Wizard storage."""
 
     def materialize_expression(self, expression_name: str, destination: Path) -> None:
@@ -68,9 +71,16 @@ class LocalComfyTransport:
         history = self.client.wait(prompt_id, timeout=timeout)
         return prompt_id, history
 
-    def materialize_image(self, history: dict[str, Any], destination: Path) -> dict[str, Any]:
+    def smoke_test(self, request: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, Any]]:
+        from comfy_smoke import build_smoke_prompt
+
+        prompt, config = build_smoke_prompt(request, self.client.get("/object_info"))
+        prompt_id, history = self.execute(prompt, timeout=600.0)
+        return prompt_id, history, config
+
+    def materialize_image(self, history: dict[str, Any], destination: Path, node_id: str = "3") -> dict[str, Any]:
         _, output_root = self._paths()
-        output = output_image_from_history(history)
+        output = output_image_from_history(history, node_id=node_id)
         generated = output_root / output.get("subfolder", "") / output["filename"]
         copy_verified(generated, destination)
         return output
@@ -155,8 +165,12 @@ class RemoteComfyTransport:
         result = self._request("POST", "/api/execute", payload={"prompt": prompt, "timeout": timeout})
         return str(result["prompt_id"]), result["history"]
 
-    def materialize_image(self, history: dict[str, Any], destination: Path) -> dict[str, Any]:
-        output = output_image_from_history(history)
+    def smoke_test(self, request: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, Any]]:
+        result = self._request("POST", "/api/smoke-test", payload=request)
+        return str(result["prompt_id"]), result["history"], result["config"]
+
+    def materialize_image(self, history: dict[str, Any], destination: Path, node_id: str = "3") -> dict[str, Any]:
+        output = output_image_from_history(history, node_id=node_id)
         query = urllib.parse.urlencode({"filename": output["filename"], "subfolder": output.get("subfolder", "")})
         data = self._request("GET", f"/api/output/image?{query}", expect_json=False)
         destination.parent.mkdir(parents=True, exist_ok=True)

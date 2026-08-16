@@ -348,6 +348,30 @@ class WizardService:
     def schema(self) -> dict[str, Any]:
         return live_expression_schema(self.api_url, self.transport)
 
+    def run_smoke_test(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Run a constrained core ComfyUI text-to-image check and keep the result locally."""
+        prompt_id, history, config = self.transport.smoke_test(request)
+        test_id = str(config["test_id"])
+        smoke_root = self.paths.root / "_smoke_tests"
+        destination = smoke_root / f"{test_id}.png"
+        output = self.transport.materialize_image(history, destination, node_id="7")
+        width, height = safe_image_dimensions(destination)
+        return {
+            "ok": True,
+            "test_id": test_id,
+            "prompt_id": prompt_id,
+            "config": config,
+            "image": {
+                "path": str(destination),
+                "url": f"/api/manage/smoke-tests/{destination.name}",
+                "width": width,
+                "height": height,
+                "sha256": sha256_file(destination),
+                "pixel_sha256": image_pixel_hash(destination),
+                "comfy_output": output,
+            },
+        }
+
     def lys_sources(self) -> list[dict[str, Any]]:
         result = []
         for source_id, filename in (("anchor_1", "anchor 1.png"), ("anchor_2", "anchor 2.png"), ("anchor_3", "anchor 3.png")):

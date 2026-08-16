@@ -29,6 +29,7 @@ from comfy_diagnostics import (  # noqa: E402
     list_custom_nodes,
     list_models,
 )
+from comfy_smoke import build_smoke_prompt  # noqa: E402
 
 
 MINIMUM_TOKEN_LENGTH = 24
@@ -183,6 +184,18 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
             raise ValueError("JSON body must be an object")
         return value
 
+    def register_history_outputs(self, history: dict[str, Any], expression_names: set[str] | None = None) -> None:
+        image_names = set()
+        for output in history.get("outputs", {}).values():
+            for image in output.get("images", []) if isinstance(output, dict) else []:
+                filename = image.get("filename")
+                subfolder = image.get("subfolder", "")
+                if isinstance(filename, str) and PurePosixPath(filename).name == filename:
+                    image_names.add(f"{subfolder}/{filename}" if subfolder else filename)
+        with self.server.artifact_lock:  # type: ignore[attr-defined]
+            self.server.allowed_images.update(image_names)  # type: ignore[attr-defined]
+            self.server.allowed_expressions.update(expression_names or set())  # type: ignore[attr-defined]
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         try:
@@ -312,17 +325,16 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
                 timeout = min(max(float(body.get("timeout", 300.0)), 1.0), MAX_EXECUTION_SECONDS)
                 prompt_id = self.client.queue(prompt)
                 history = self.client.wait(prompt_id, timeout=timeout)
-                image_names = set()
-                for output in history.get("outputs", {}).values():
-                    for image in output.get("images", []) if isinstance(output, dict) else []:
-                        filename = image.get("filename")
-                        subfolder = image.get("subfolder", "")
-                        if isinstance(filename, str) and PurePosixPath(filename).name == filename:
-                            image_names.add(f"{subfolder}/{filename}" if subfolder else filename)
-                with self.server.artifact_lock:  # type: ignore[attr-defined]
-                    self.server.allowed_images.update(image_names)  # type: ignore[attr-defined]
-                    self.server.allowed_expressions.update(expression_names)  # type: ignore[attr-defined]
+                self.register_history_outputs(history, expression_names)
                 self.send_json({"ok": True, "prompt_id": prompt_id, "history": history}, HTTPStatus.OK)
+                return
+            if parsed.path == "/api/smoke-test":
+                body = self.read_json(MAX_PROMPT_BYTES)
+                prompt, config = build_smoke_prompt(body, self.client.get("/object_info"))
+                prompt_id = self.client.queue(prompt)
+                history = self.client.wait(prompt_id, timeout=MAX_EXECUTION_SECONDS)
+                self.register_history_outputs(history)
+                self.send_json({"ok": True, "prompt_id": prompt_id, "history": history, "config": config}, HTTPStatus.OK)
                 return
             self.send_failure(HTTPStatus.NOT_FOUND, "Unknown gateway endpoint")
         except (ValueError, KeyError, json.JSONDecodeError) as exc:

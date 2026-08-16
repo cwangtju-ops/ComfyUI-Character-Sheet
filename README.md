@@ -22,7 +22,7 @@ or image-wash the source.
   and retry without regenerating completed candidates.
 - Exact Comfy workflow JSON, binary `.exp`, tensor JSON/CSV, hashes, manifests,
   and numeric side-effect analysis.
-- REST, CLI, and fourteen structured MCP tools.
+- REST, CLI, and fifteen structured MCP tools.
 - Backward-compatible calibration reviewer routes.
 
 ## Requirements
@@ -106,6 +106,11 @@ safetensors structure, calculate a requested model's SHA-256, and diagnose
 workflow dependencies. These endpoints cannot download, install, delete, or
 execute system commands.
 
+The generation token also exposes one deliberately fixed core-node smoke test.
+It can select an already installed checkpoint and bounded sampler parameters,
+but it cannot submit arbitrary nodes or workflows. The generated PNG is copied
+back into the laptop-owned data directory.
+
 ## CLI
 
 The server must be running before using the CLI.
@@ -151,6 +156,7 @@ Open a new Codex task after editing the configuration. The MCP bridge exposes:
 - `inspect_comfy_model`
 - `list_comfy_custom_nodes`
 - `diagnose_comfy_workflow`
+- `run_comfy_smoke_test`
 
 ## REST API
 
@@ -164,6 +170,8 @@ Open a new Codex task after editing the configuration. The MCP bridge exposes:
 - `GET /api/explore/jobs/{id}/analysis`
 - `GET /api/explore/jobs/{id}/candidates/{candidate}/workflow`
 - `POST /api/explore/validate-workflow`
+- `POST /api/manage/smoke-test`
+- `GET /api/manage/smoke-tests/{filename}`
 
 ## Tests
 

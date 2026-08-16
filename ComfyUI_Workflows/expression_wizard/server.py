@@ -316,6 +316,11 @@ class ExpressionWizardHandler(ReviewHandler):
                 include_sha256 = query.get("sha256", ["true"])[0].lower() not in {"0", "false", "no"}
                 self.send_json(self.management.inspect_model(relative, include_sha256))
                 return
+            smoke_prefix = "/api/manage/smoke-tests/"
+            if path.startswith(smoke_prefix):
+                filename = urllib.parse.unquote(path[len(smoke_prefix) :])
+                self.serve_file_under(self.wizard.paths.root / "_smoke_tests", filename)
+                return
             parts = self.explore_parts(path)
             if len(parts) == 2 and parts[0] == "sources":
                 self.serve_file_under(self.wizard.paths.lys_root, {"anchor_1": "anchor 1.png", "anchor_2": "anchor 2.png", "anchor_3": "anchor 3.png"}.get(parts[1], "__missing__"))
@@ -400,6 +405,9 @@ class ExpressionWizardHandler(ReviewHandler):
                 if not isinstance(workflow, dict) or not workflow:
                     raise ValueError("Workflow must be a non-empty object")
                 self.send_json(self.management.diagnose_workflow(workflow))
+                return
+            if path == "/api/manage/smoke-test":
+                self.send_json(self.wizard.run_smoke_test(self.read_json_body(maximum=32 * 1024)))
                 return
             parts = self.explore_parts(path)
             if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "retry":
