@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "profile_id": "cyberrealistic-pony-semireal-v6",
+  "status": "verified",
+  "display_name": "CyberRealistic Pony Semi-Realistic — Semi-Real v6",
+  "checkpoint": {
+    "filename": "cyberrealisticPony_semiRealV6.safetensors",
+    "sha256": "1b25570a2849bb699dd78414758b8d95a4943130d02e6ae8b26222d68dac4af7",
+    "size_bytes": 6938041288,
+    "base_model": "Pony Diffusion V6 XL"
+  },
+  "sources": [
+    {
+      "id": "semi-real-v6-version",
+      "kind": "exact_version_mirror",
+      "url": "https://prompthero.com/ai-models/cyberrealistic-pony-semi-realistic-709404-download/cyberrealistic-pony-semi-realistic-semi-real-v6",
+      "retrieved_at": "2026-08-16",
+      "supports": ["version", "filename", "positive_prompt", "negative_prompt"]
+    },
+    {
+      "id": "cyberrealistic-series-guide",
+      "kind": "author_series_guide",
+      "url": "https://cyberrealistic.org/cyberrealistic-pony",
+      "retrieved_at": "2026-08-16",
+      "supports": ["resolution", "sampler", "scheduler", "steps", "cfg", "clip_skip", "vae", "optional_refinement"]
+    },
+    {
+      "id": "hugging-face-model-card",
+      "kind": "author_model_card",
+      "url": "https://huggingface.co/cyberdelia/CyberRealisticSemiRealPony/blob/main/README.md",
+      "retrieved_at": "2026-08-16",
+      "supports": ["resolution", "sampler_alternatives", "steps", "cfg", "vae"]
+    }
+  ],
+  "generation": {
+    "width": 832,
+    "height": 1216,
+    "alternate_resolutions": [
+      {"width": 896, "height": 1152}
+    ],
+    "steps": 30,
+    "cfg": 5.0,
+    "sampler_name": "dpmpp_2m",
+    "scheduler": "karras",
+    "clip_skip": 2,
+    "vae": "baked"
+  },
+  "prompts": {
+    "positive_prefix": "score_9, score_8_up, score_7_up",
+    "default_subject": "semi-realistic cinematic portrait of an adult woman, head and shoulders, natural skin texture, detailed expressive eyes, subtle friendly smile, soft studio lighting, neutral background, high detail",
+    "negative": "score_6, score_5, score_4, source_pony, (worst quality:1.2), (low quality:1.2), (normal quality:1.2), lowres, bad anatomy, bad hands, signature, watermarks, ugly, imperfect eyes, skewed eyes, unnatural face, unnatural body, error, extra limb, missing limbs"
+  },
+  "dependencies": {
+    "required": [],
+    "optional": [
+      {"type": "embedding", "name": "CyberRealisticPony_POSV1", "installed": false},
+      {"type": "embedding", "name": "CyberRealistic Pony Negative", "installed": false},
+      {"type": "upscaler", "name": "4x_NickelbackFS_72000_G", "installed": false}
+    ]
+  },
+  "refinement": {
+    "enabled_by_default": false,
+    "stage": "final_refinement",
+    "scale": 1.55,
+    "denoise": 0.45,
+    "upscaler": "4x_NickelbackFS_72000_G",
+    "note": "Optional only; skipped during model experiments and expression parameter exploration."
+  }
+}

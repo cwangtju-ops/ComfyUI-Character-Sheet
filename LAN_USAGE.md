@@ -218,13 +218,8 @@ services remain open:
 ```powershell
 $body = @{
   checkpoint = 'cyberrealisticPony_semiRealV6.safetensors'
-  width = 768
-  height = 768
-  steps = 20
-  cfg = 6
+  positive = 'semi-realistic cinematic portrait of an adult woman, head and shoulders, natural skin texture, detailed expressive eyes, subtle friendly smile, soft studio lighting, neutral background'
   seed = 20260816
-  sampler_name = 'dpmpp_2m_sde'
-  scheduler = 'karras'
 } | ConvertTo-Json
 
 Invoke-RestMethod `
@@ -234,9 +229,11 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-The desktop gateway accepts only the fixed seven-node core workflow and checks
-the checkpoint, sampler, scheduler, dimensions, step count, CFG, seed, and
-prompt lengths against bounded values. The returned `image.path` points to the
+The desktop gateway accepts only the fixed core workflow and requires a
+researched Model Profile. Profile defaults supply the native resolution,
+sampler, scheduler, steps, CFG, Clip Skip, VAE behavior, and prompt templates;
+explicit deviations are retained in the result's `overrides`. Optional upscale
+and refinement remain disabled during experiments. The returned `image.path` points to the
 PNG copied under the laptop's `ComfyUI_Generated\Expression_Wizard\_smoke_tests`
 folder.
 

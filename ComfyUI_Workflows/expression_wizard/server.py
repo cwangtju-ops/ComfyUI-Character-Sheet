@@ -316,6 +316,9 @@ class ExpressionWizardHandler(ReviewHandler):
                 include_sha256 = query.get("sha256", ["true"])[0].lower() not in {"0", "false", "no"}
                 self.send_json(self.management.inspect_model(relative, include_sha256))
                 return
+            if path == "/api/manage/model-profiles":
+                self.send_json(self.wizard.model_profiles())
+                return
             smoke_prefix = "/api/manage/smoke-tests/"
             if path.startswith(smoke_prefix):
                 filename = urllib.parse.unquote(path[len(smoke_prefix) :])

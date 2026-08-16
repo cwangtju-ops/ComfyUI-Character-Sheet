@@ -44,6 +44,7 @@ from lys_calibration import (  # noqa: E402
 )
 
 from comfy_transport import ComfyTransport, LocalComfyTransport  # noqa: E402
+from model_profiles import load_profiles, public_profile  # noqa: E402
 
 
 SCHEMA_VERSION = 1
@@ -354,7 +355,7 @@ class WizardService:
         test_id = str(config["test_id"])
         smoke_root = self.paths.root / "_smoke_tests"
         destination = smoke_root / f"{test_id}.png"
-        output = self.transport.materialize_image(history, destination, node_id="7")
+        output = self.transport.materialize_image(history, destination, node_id=str(config["output_node_id"]))
         width, height = safe_image_dimensions(destination)
         return {
             "ok": True,
@@ -371,6 +372,17 @@ class WizardService:
                 "comfy_output": output,
             },
         }
+
+    def model_profiles(self) -> dict[str, Any]:
+        object_info = self.transport.get("/object_info")
+        checkpoint_schema = object_info.get("CheckpointLoaderSimple", {}).get("input", {}).get("required", {}).get("ckpt_name", [])
+        installed = set(checkpoint_schema[0]) if checkpoint_schema and isinstance(checkpoint_schema[0], list) else set()
+        profiles = []
+        for profile in load_profiles():
+            item = public_profile(profile)
+            item["installed"] = item["checkpoint"]["filename"] in installed
+            profiles.append(item)
+        return {"profiles": profiles, "count": len(profiles)}
 
     def lys_sources(self) -> list[dict[str, Any]]:
         result = []

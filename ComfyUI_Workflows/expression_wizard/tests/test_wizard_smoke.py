@@ -16,10 +16,16 @@ from wizard_core import WizardService  # noqa: E402
 
 
 class FakeSmokeTransport:
+    def get(self, path: str) -> dict:
+        if path == "/object_info":
+            return {"CheckpointLoaderSimple": {"input": {"required": {"ckpt_name": [["cyberrealisticPony_semiRealV6.safetensors"], {}]}}}}
+        raise AssertionError(path)
+
     def smoke_test(self, request: dict) -> tuple[str, dict, dict]:
-        return "prompt-1", {"outputs": {"7": {"images": [{"filename": "result.png"}]}}}, {
+        return "prompt-1", {"outputs": {"8": {"images": [{"filename": "result.png"}]}}}, {
             "test_id": "smoke_test_1",
             "checkpoint": request["checkpoint"],
+            "output_node_id": "8",
         }
 
     def materialize_image(self, history: dict, destination: Path, node_id: str = "3") -> dict:
@@ -36,10 +42,18 @@ class WizardSmokeTests(unittest.TestCase):
             service = WizardService(Path(temp), transport=transport)
             result = service.run_smoke_test({"checkpoint": "pony.safetensors"})
             self.assertTrue(result["ok"])
-            self.assertEqual(transport.node_id, "7")
+            self.assertEqual(transport.node_id, "8")
             self.assertEqual((result["image"]["width"], result["image"]["height"]), (512, 640))
             self.assertTrue(Path(result["image"]["path"]).is_file())
             self.assertEqual(result["image"]["url"], "/api/manage/smoke-tests/smoke_test_1.png")
+
+    def test_lists_profile_with_live_installation_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            service = WizardService(Path(temp), transport=FakeSmokeTransport())
+            result = service.model_profiles()
+            self.assertEqual(result["count"], 1)
+            self.assertTrue(result["profiles"][0]["installed"])
+            self.assertEqual(result["profiles"][0]["profile_id"], "cyberrealistic-pony-semireal-v6")
 
 
 if __name__ == "__main__":

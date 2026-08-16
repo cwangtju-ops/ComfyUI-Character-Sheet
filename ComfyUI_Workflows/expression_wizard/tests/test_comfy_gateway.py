@@ -42,9 +42,10 @@ class FakeComfyClient:
             return {
                 "ExpressionEditor": {"input": {"required": {}}},
                 "CheckpointLoaderSimple": {"input": {"required": {"ckpt_name": [["cyberrealisticPony_semiRealV6.safetensors"], {}]}}},
+                "CLIPSetLastLayer": {"input": {"required": {}}},
                 "CLIPTextEncode": {"input": {"required": {}}},
                 "EmptyLatentImage": {"input": {"required": {}}},
-                "KSampler": {"input": {"required": {"sampler_name": [["dpmpp_2m_sde"], {}], "scheduler": [["karras"], {}]}}},
+                "KSampler": {"input": {"required": {"sampler_name": [["dpmpp_2m", "dpmpp_2m_sde"], {}], "scheduler": [["karras"], {}]}}},
                 "VAEDecode": {"input": {"required": {}}},
                 "SaveImage": {"input": {"required": {}}},
             }
@@ -57,7 +58,7 @@ class FakeComfyClient:
     def wait(self, prompt_id: str, timeout: float) -> dict:
         assert prompt_id == "remote-prompt-1"
         assert timeout in {42.0, 600.0}
-        node_id = "7" if "7" in self.queued else "3"
+        node_id = next((key for key, node in self.queued.items() if node.get("class_type") == "SaveImage"), "3")
         subfolder = "remote-job" if node_id == "3" else "remote-job\\windows-output"
         return {"outputs": {node_id: {"images": [{"filename": "result.png", "subfolder": subfolder}]}}}
 
@@ -124,10 +125,12 @@ class ComfyGatewayTests(unittest.TestCase):
         self.assertEqual(prompt_id, "remote-prompt-1")
         self.assertEqual(config["checkpoint"], "cyberrealisticPony_semiRealV6.safetensors")
         self.assertEqual({node["class_type"] for node in self.client.queued.values()}, {
-            "CheckpointLoaderSimple", "CLIPTextEncode", "EmptyLatentImage", "KSampler", "VAEDecode", "SaveImage"
+            "CheckpointLoaderSimple", "CLIPSetLastLayer", "CLIPTextEncode", "EmptyLatentImage", "KSampler", "VAEDecode", "SaveImage"
         })
+        self.assertEqual(config["profile_id"], "cyberrealistic-pony-semireal-v6")
+        self.assertFalse(config["recommendation_match"])
         image = Path(self.temp.name) / "smoke.png"
-        transport.materialize_image(history, image, node_id="7")
+        transport.materialize_image(history, image, node_id=config["output_node_id"])
         with Image.open(image) as generated:
             self.assertEqual(generated.size, (512, 512))
 

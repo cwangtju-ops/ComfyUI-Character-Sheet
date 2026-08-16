@@ -22,7 +22,7 @@ or image-wash the source.
   and retry without regenerating completed candidates.
 - Exact Comfy workflow JSON, binary `.exp`, tensor JSON/CSV, hashes, manifests,
   and numeric side-effect analysis.
-- REST, CLI, and fifteen structured MCP tools.
+- REST, CLI, and sixteen structured MCP tools.
 - Backward-compatible calibration reviewer routes.
 
 ## Requirements
@@ -111,6 +111,19 @@ It can select an already installed checkpoint and bounded sampler parameters,
 but it cannot submit arbitrary nodes or workflows. The generated PNG is copied
 back into the laptop-owned data directory.
 
+### Model Profiles
+
+Quality-oriented generation requires a researched Model Profile matched to the
+checkpoint filename and SHA-256. A profile records exact-version and author
+sources, native resolution, sampler/scheduler, steps, CFG, Clip Skip, baked or
+external VAE behavior, prompt templates, dependencies, and optional refinement.
+Unprofiled checkpoints are rejected by the quality smoke-test endpoint.
+
+The first verified profile is
+`cyberrealistic-pony-semireal-v6`: 832x1216, 30 steps, CFG 5, DPM++ 2M Karras,
+Clip Skip 2, and the baked VAE. Its optional 1.55x refinement/upscaler stage is
+recorded but always disabled during experiments.
+
 ## CLI
 
 The server must be running before using the CLI.
@@ -157,6 +170,7 @@ Open a new Codex task after editing the configuration. The MCP bridge exposes:
 - `list_comfy_custom_nodes`
 - `diagnose_comfy_workflow`
 - `run_comfy_smoke_test`
+- `list_model_profiles`
 
 ## REST API
 
@@ -171,6 +185,7 @@ Open a new Codex task after editing the configuration. The MCP bridge exposes:
 - `GET /api/explore/jobs/{id}/candidates/{candidate}/workflow`
 - `POST /api/explore/validate-workflow`
 - `POST /api/manage/smoke-test`
+- `GET /api/manage/model-profiles`
 - `GET /api/manage/smoke-tests/{filename}`
 
 ## Tests
