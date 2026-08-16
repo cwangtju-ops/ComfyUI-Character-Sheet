@@ -245,6 +245,23 @@ To remove only the gateway firewall rule later:
 .\scripts\Remove-LanAccess.ps1 -RuleName 'Expression Wizard Comfy Gateway'
 ```
 
+### Silent distributed operation
+
+After the environment above has been verified, the persistent consoles can be
+replaced by the silent launchers:
+
+1. On the desktop, double-click `Expression Wizard Gateway Silent.vbs`.
+2. On the laptop, double-click `Expression Wizard Laptop Silent.vbs`.
+3. Closing the EW tab or Chrome does not stop either service. Double-clicking
+   the laptop launcher again reconnects to the existing backend.
+4. Use EW's **Stop backend** button or `Expression Wizard Laptop Stop.vbs` for
+   the laptop service. Use `Expression Wizard Gateway Stop.vbs` on the desktop.
+
+The standalone Stop launchers refuse to interrupt active work. EW's in-page
+stop action asks before cancelling an active experiment and waits until its
+current image returns. Runtime logs and PID metadata are stored outside the
+repository under `%USERPROFILE%\.expression_wizard\runtime`.
+
 ## Security boundaries
 
 - The firewall rule is Private-profile only and restricted to one laptop IPv4.

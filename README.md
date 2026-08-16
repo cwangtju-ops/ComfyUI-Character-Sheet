@@ -106,6 +106,60 @@ runs `Expression Wizard Comfy Gateway.cmd` on port 8189; the laptop runs
 
 See [LAN_USAGE.md](LAN_USAGE.md) for the firewall, token, and environment setup.
 
+### Silent Windows launchers
+
+The distributed services can run without persistent PowerShell windows:
+
+- On the laptop, double-click `Expression Wizard Laptop Silent.vbs`. It starts one
+  background backend instance, writes logs under
+  `%USERPROFILE%\.expression_wizard\runtime\laptop`, waits for health, and opens EW.
+- On the desktop, double-click `Expression Wizard Gateway Silent.vbs`. It starts one
+  background gateway instance and writes logs under
+  `%USERPROFILE%\.expression_wizard\runtime\gateway`.
+- The matching `... Stop.vbs` launchers request authenticated, graceful shutdown.
+  They refuse to interrupt active work. The EW web page also has a **Stop backend**
+  action that can explicitly cancel the active experiment after its current image.
+- The matching `... Status.vbs` launchers show whether each service is running
+  without opening a PowerShell window.
+
+Closing an EW tab or the entire browser does not stop either background process.
+This is intentional: browser close events are unreliable and an experiment may still
+be running. Reopening the silent laptop launcher reconnects to the existing instance.
+Repeated starts never create a second instance on the same port.
+
+PowerShell status and log controls are also available:
+
+```powershell
+& '.\scripts\Manage-ExpressionWizard.ps1' -Component Laptop -Action Status
+& '.\scripts\Manage-ExpressionWizard.ps1' -Component Laptop -Action OpenLogs
+& '.\scripts\Manage-ExpressionWizard.ps1' -Component Gateway -Action Status
+```
+
+Optional machine-specific values can be stored in
+`%USERPROFILE%\.expression_wizard\service.json`. Environment variables retain
+precedence over built-in defaults when no JSON value is present. For example:
+
+```json
+{
+  "laptop": {
+    "port": 8775,
+    "data_root": "C:\\Codex Projects\\ComfyUI\\Character Sheet_Lys",
+    "gateway_url": "http://192.168.2.200:8189",
+    "idle_timeout_seconds": 0
+  },
+  "gateway": {
+    "port": 8189,
+    "comfy_root": "C:\\ComfyUI",
+    "python": "C:\\ComfyUI\\.venv\\Scripts\\python.exe",
+    "allowed_clients": "192.168.2.242"
+  }
+}
+```
+
+Laptop idle shutdown is disabled by default (`0`). Set it to `1800` or `7200`
+to stop only after 30 minutes or 2 hours without browser heartbeats and with no
+active or queued experiment. The desktop gateway never follows browser lifetime.
+
 The desktop gateway also creates a separate read-only administrator token. When
 the laptop backend receives it as `EXPRESSION_WIZARD_COMFY_ADMIN_TOKEN`, the CLI
 and Codex MCP bridge can inventory installed custom nodes and models, validate

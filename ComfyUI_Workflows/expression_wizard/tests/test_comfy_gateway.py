@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import threading
@@ -180,6 +181,38 @@ class ComfyGatewayTests(unittest.TestCase):
     def test_lan_binding_requires_an_allowed_client(self) -> None:
         with self.assertRaisesRegex(ValueError, "allow-client"):
             build_server("0.0.0.0", 0, "http://127.0.0.1:8188", TOKEN, set(), self.client)
+
+    def test_gateway_lifecycle_status_uses_local_control_token(self) -> None:
+        request = urllib.request.Request(
+            self.url + "/api/lifecycle/status",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+        with urllib.request.urlopen(request, timeout=2) as response:
+            payload = json.loads(response.read())
+        self.assertEqual(payload["active_operations"], 0)
+        self.assertFalse(payload["shutdown_requested"])
+
+        wrong = urllib.request.Request(
+            self.url + "/api/lifecycle/status",
+            headers={"Authorization": f"Bearer {ADMIN_TOKEN}"},
+        )
+        with self.assertRaises(urllib.error.HTTPError) as denied:
+            urllib.request.urlopen(wrong, timeout=2)
+        self.assertEqual(denied.exception.code, 401)
+
+    def test_gateway_refuses_shutdown_while_operation_is_active(self) -> None:
+        self.server.active_operations = 1
+        request = urllib.request.Request(
+            self.url + "/api/lifecycle/shutdown",
+            data=b"{}",
+            headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as busy:
+            urllib.request.urlopen(request, timeout=2)
+        self.assertEqual(busy.exception.code, 409)
+        self.assertFalse(self.server.shutdown_requested)
+        self.server.active_operations = 0
 
     def test_read_only_management_uses_separate_token(self) -> None:
         request = urllib.request.Request(

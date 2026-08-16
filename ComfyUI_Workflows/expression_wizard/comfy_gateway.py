@@ -173,6 +173,33 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def lifecycle_authorized(self) -> bool:
+        try:
+            local_client = ip_address(self.client_address[0]).is_loopback
+        except ValueError:
+            local_client = False
+        if not local_client:
+            self.send_failure(HTTPStatus.FORBIDDEN, "Lifecycle control is local-only")
+            return False
+        authorization = self.headers.get("Authorization", "")
+        token = self.server.control_token  # type: ignore[attr-defined]
+        if not authorization.startswith("Bearer ") or not hmac.compare_digest(authorization[7:], token):
+            self.send_failure(HTTPStatus.UNAUTHORIZED, "Lifecycle authentication required")
+            return False
+        return True
+
+    def begin_operation(self) -> bool:
+        with self.server.operation_lock:  # type: ignore[attr-defined]
+            if self.server.shutdown_requested:  # type: ignore[attr-defined]
+                self.send_failure(HTTPStatus.SERVICE_UNAVAILABLE, "Gateway is shutting down")
+                return False
+            self.server.active_operations += 1  # type: ignore[attr-defined]
+            return True
+
+    def end_operation(self) -> None:
+        with self.server.operation_lock:  # type: ignore[attr-defined]
+            self.server.active_operations -= 1  # type: ignore[attr-defined]
+
     def read_json(self, maximum: int) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0:
@@ -201,6 +228,12 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/health":
                 self.send_json({"ok": True, "service": "Expression Wizard ComfyUI Gateway", "auth_required": True})
+                return
+            if parsed.path == "/api/lifecycle/status":
+                if self.lifecycle_authorized():
+                    with self.server.operation_lock:  # type: ignore[attr-defined]
+                        active = self.server.active_operations  # type: ignore[attr-defined]
+                    self.send_json({"ok": True, "active_operations": active, "shutdown_requested": self.server.shutdown_requested})  # type: ignore[attr-defined]
                 return
             admin = parsed.path.startswith("/api/admin/")
             if not self.authorized(admin=admin):
@@ -288,6 +321,18 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         try:
+            if parsed.path == "/api/lifecycle/shutdown":
+                if not self.lifecycle_authorized():
+                    return
+                with self.server.operation_lock:  # type: ignore[attr-defined]
+                    active = self.server.active_operations  # type: ignore[attr-defined]
+                    if active:
+                        self.send_failure(HTTPStatus.CONFLICT, f"Gateway has {active} active operation(s)")
+                        return
+                    self.server.shutdown_requested = True  # type: ignore[attr-defined]
+                self.send_json({"ok": True, "shutting_down": True})
+                threading.Thread(target=self.server.shutdown, daemon=True, name="expression-wizard-gateway-shutdown").start()
+                return
             admin = parsed.path.startswith("/api/admin/")
             if not self.authorized(admin=admin):
                 return
@@ -328,24 +373,34 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "input_name": input_name}, HTTPStatus.CREATED)
                 return
             if parsed.path == "/api/execute":
-                body = self.read_json(MAX_PROMPT_BYTES)
-                prompt = body.get("prompt")
-                if not isinstance(prompt, dict) or not prompt:
-                    raise ValueError("Prompt must be a non-empty object")
-                expression_names = validate_prompt(prompt)
-                timeout = min(max(float(body.get("timeout", 300.0)), 1.0), MAX_EXECUTION_SECONDS)
-                prompt_id = self.client.queue(prompt)
-                history = self.client.wait(prompt_id, timeout=timeout)
-                self.register_history_outputs(history, expression_names)
-                self.send_json({"ok": True, "prompt_id": prompt_id, "history": history}, HTTPStatus.OK)
+                if not self.begin_operation():
+                    return
+                try:
+                    body = self.read_json(MAX_PROMPT_BYTES)
+                    prompt = body.get("prompt")
+                    if not isinstance(prompt, dict) or not prompt:
+                        raise ValueError("Prompt must be a non-empty object")
+                    expression_names = validate_prompt(prompt)
+                    timeout = min(max(float(body.get("timeout", 300.0)), 1.0), MAX_EXECUTION_SECONDS)
+                    prompt_id = self.client.queue(prompt)
+                    history = self.client.wait(prompt_id, timeout=timeout)
+                    self.register_history_outputs(history, expression_names)
+                    self.send_json({"ok": True, "prompt_id": prompt_id, "history": history}, HTTPStatus.OK)
+                finally:
+                    self.end_operation()
                 return
             if parsed.path == "/api/smoke-test":
-                body = self.read_json(MAX_PROMPT_BYTES)
-                prompt, config = build_smoke_prompt(body, self.client.get("/object_info"))
-                prompt_id = self.client.queue(prompt)
-                history = self.client.wait(prompt_id, timeout=MAX_EXECUTION_SECONDS)
-                self.register_history_outputs(history)
-                self.send_json({"ok": True, "prompt_id": prompt_id, "history": history, "config": config}, HTTPStatus.OK)
+                if not self.begin_operation():
+                    return
+                try:
+                    body = self.read_json(MAX_PROMPT_BYTES)
+                    prompt, config = build_smoke_prompt(body, self.client.get("/object_info"))
+                    prompt_id = self.client.queue(prompt)
+                    history = self.client.wait(prompt_id, timeout=MAX_EXECUTION_SECONDS)
+                    self.register_history_outputs(history)
+                    self.send_json({"ok": True, "prompt_id": prompt_id, "history": history, "config": config}, HTTPStatus.OK)
+                finally:
+                    self.end_operation()
                 return
             self.send_failure(HTTPStatus.NOT_FOUND, "Unknown gateway endpoint")
         except (ValueError, KeyError, json.JSONDecodeError) as exc:
@@ -363,6 +418,7 @@ def build_server(
     client: Any | None = None,
     comfy_root: Path | None = None,
     admin_token: str | None = None,
+    control_token: str | None = None,
 ) -> ThreadingHTTPServer:
     token = validate_token(access_token)
     admin_token = validate_token(admin_token or access_token)
@@ -386,6 +442,10 @@ def build_server(
     server.allowed_images = set()  # type: ignore[attr-defined]
     server.allowed_expressions = set()  # type: ignore[attr-defined]
     server.artifact_lock = threading.RLock()  # type: ignore[attr-defined]
+    server.control_token = validate_token(control_token or access_token)  # type: ignore[attr-defined]
+    server.operation_lock = threading.RLock()  # type: ignore[attr-defined]
+    server.active_operations = 0  # type: ignore[attr-defined]
+    server.shutdown_requested = False  # type: ignore[attr-defined]
     return server
 
 
@@ -400,6 +460,7 @@ def main() -> None:
     parser.add_argument("--access-token", help="Explicit token; prefer token file or EXPRESSION_WIZARD_COMFY_TOKEN")
     parser.add_argument("--admin-token-file", default=str(Path.home() / ".expression_wizard" / "comfy_gateway_admin_token.txt"))
     parser.add_argument("--admin-token", help="Explicit read-only management token; prefer its token file")
+    parser.add_argument("--control-token-file", default=str(Path.home() / ".expression_wizard" / "comfy_gateway_control_token.txt"))
     args = parser.parse_args()
 
     env_clients = [item.strip() for item in os.environ.get("EXPRESSION_WIZARD_ALLOWED_CLIENTS", "").split(",") if item.strip()]
@@ -410,9 +471,11 @@ def main() -> None:
     admin_explicit = args.admin_token or os.environ.get("EXPRESSION_WIZARD_COMFY_ADMIN_TOKEN")
     admin_token_file = Path(args.admin_token_file).expanduser().resolve()
     admin_token, admin_created = load_or_create_token(admin_token_file, admin_explicit)
+    control_token_file = Path(args.control_token_file).expanduser().resolve()
+    control_token, _ = load_or_create_token(control_token_file)
     try:
         root = Path(args.comfy_root).expanduser().resolve() if args.comfy_root else None
-        server = build_server(args.host, args.port, args.api, token, allowed_clients, comfy_root=root, admin_token=admin_token)
+        server = build_server(args.host, args.port, args.api, token, allowed_clients, comfy_root=root, admin_token=admin_token, control_token=control_token)
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
 
@@ -429,6 +492,7 @@ def main() -> None:
     print(f"Admin token file: {admin_token_file}", flush=True)
     if admin_created:
         print("A new persistent read-only admin token was created.", flush=True)
+    print(f"Lifecycle control token file: {control_token_file}", flush=True)
     print("Press Ctrl+C to stop", flush=True)
     try:
         server.serve_forever()

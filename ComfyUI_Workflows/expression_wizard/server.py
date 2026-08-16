@@ -258,9 +258,42 @@ class ExpressionWizardHandler(ReviewHandler):
         self.send_json_headers({"ok": False, "error": "Cross-origin request rejected"}, HTTPStatus.FORBIDDEN)
         return True
 
+    def lifecycle_authorized(self) -> bool:
+        try:
+            local_client = ip_address(self.client_address[0]).is_loopback
+        except ValueError:
+            local_client = False
+        if not local_client:
+            self.send_json_headers({"ok": False, "error": "Lifecycle control is local-only"}, HTTPStatus.FORBIDDEN)
+            return False
+        authorization = self.headers.get("Authorization", "")
+        control_token = self.server.control_token  # type: ignore[attr-defined]
+        if authorization:
+            if control_token and authorization.startswith("Bearer ") and hmac.compare_digest(authorization[7:], control_token):
+                return True
+            self.send_json_headers({"ok": False, "error": "Lifecycle authentication required"}, HTTPStatus.UNAUTHORIZED)
+            return False
+        if self.authorized() and self.valid_origin():
+            return True
+        self.send_json_headers({"ok": False, "error": "Lifecycle authentication required"}, HTTPStatus.UNAUTHORIZED)
+        return False
+
+    def lifecycle_payload(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "service": "Expression Wizard",
+            "shutdown_requested": bool(self.server.shutdown_requested),  # type: ignore[attr-defined]
+            "active_jobs": self.wizard.active_jobs(),
+            "idle_timeout_seconds": int(self.server.idle_timeout_seconds),  # type: ignore[attr-defined]
+        }
+
     def do_GET(self) -> None:
         path = urllib.parse.urlparse(self.path).path
         try:
+            if path == "/api/lifecycle/status":
+                if self.lifecycle_authorized():
+                    self.send_json_headers(self.lifecycle_payload())
+                return
             if path == "/api/explore/health":
                 payload: dict[str, Any] = {
                     "ok": True,
@@ -356,6 +389,35 @@ class ExpressionWizardHandler(ReviewHandler):
     def do_POST(self) -> None:
         path = urllib.parse.urlparse(self.path).path
         try:
+            if path == "/api/lifecycle/heartbeat":
+                if self.require_authorized(path) or self.require_valid_origin():
+                    return
+                self.server.last_browser_activity = time.monotonic()  # type: ignore[attr-defined]
+                self.send_json_headers({"ok": True})
+                return
+            if path == "/api/lifecycle/shutdown":
+                if not self.lifecycle_authorized():
+                    return
+                body = self.read_json_body(maximum=4096)
+                cancel_active = bool(body.get("cancel_active", False))
+                active = self.wizard.active_jobs()
+                if active and not cancel_active:
+                    self.send_json_headers(
+                        {"ok": False, "error": "An experiment is active", "active_jobs": active},
+                        HTTPStatus.CONFLICT,
+                    )
+                    return
+                cancelled = self.wizard.cancel_active_jobs() if active else []
+                self.server.shutdown_requested = True  # type: ignore[attr-defined]
+                self.send_json_headers({"ok": True, "shutting_down": True, "cancelled_jobs": cancelled})
+
+                def shutdown_when_safe() -> None:
+                    if cancelled:
+                        self.wizard.wait_for_idle(timeout=610.0)
+                    self.server.shutdown()
+
+                threading.Thread(target=shutdown_when_safe, daemon=True, name="expression-wizard-shutdown").start()
+                return
             if path == "/api/auth/login":
                 if self.access_token is None:
                     self.send_json_headers({"ok": True, "authenticated": True})
@@ -388,6 +450,9 @@ class ExpressionWizardHandler(ReviewHandler):
                 self.send_json(self.wizard.add_upload(self.rfile.read(length), filename), HTTPStatus.CREATED)
                 return
             if path == "/api/explore/jobs":
+                if self.server.shutdown_requested:  # type: ignore[attr-defined]
+                    self.send_error_json(HTTPStatus.SERVICE_UNAVAILABLE, "Expression Wizard is shutting down")
+                    return
                 try:
                     result = self.wizard.create_job(self.read_json_body())
                 except RuntimeError as exc:
@@ -468,6 +533,17 @@ def open_when_ready(url: str) -> None:
     threading.Thread(target=worker, daemon=True).start()
 
 
+def monitor_idle_shutdown(server: ThreadingHTTPServer) -> None:
+    timeout = float(server.idle_timeout_seconds)  # type: ignore[attr-defined]
+    while timeout > 0 and not server.shutdown_requested:  # type: ignore[attr-defined]
+        time.sleep(min(5.0, timeout))
+        inactive = time.monotonic() - server.last_browser_activity  # type: ignore[attr-defined]
+        if inactive >= timeout and not server.wizard.active_jobs():  # type: ignore[attr-defined]
+            server.shutdown_requested = True  # type: ignore[attr-defined]
+            server.shutdown()
+            return
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Expression Wizard local/LAN server")
     parser.add_argument("--host", default=None, help="Bind address; defaults to 127.0.0.1 or 0.0.0.0 with --lan")
@@ -480,6 +556,8 @@ def main() -> None:
     parser.add_argument("--token-file", help="Persistent access-token file; generated when missing")
     parser.add_argument("--access-token", help="Explicit access token (prefer the token file or environment variable)")
     parser.add_argument("--open-browser", action="store_true")
+    parser.add_argument("--control-token-file", help="Persistent local lifecycle-control token file")
+    parser.add_argument("--idle-timeout", type=int, default=0, help="Exit after this many seconds without a browser heartbeat and no active job; 0 disables")
     args = parser.parse_args()
 
     host = args.host or ("0.0.0.0" if args.lan else "127.0.0.1")
@@ -514,6 +592,12 @@ def main() -> None:
     server.access_token = token  # type: ignore[attr-defined]
     server.sessions = SessionStore()  # type: ignore[attr-defined]
     server.lan_mode = lan_mode  # type: ignore[attr-defined]
+    control_token_file = Path(args.control_token_file).expanduser().resolve() if args.control_token_file else wizard.paths.root / "_server" / "control_token.txt"
+    control_token, _ = load_or_create_token(control_token_file)
+    server.control_token = control_token  # type: ignore[attr-defined]
+    server.shutdown_requested = False  # type: ignore[attr-defined]
+    server.idle_timeout_seconds = max(0, int(args.idle_timeout))  # type: ignore[attr-defined]
+    server.last_browser_activity = time.monotonic()  # type: ignore[attr-defined]
     admin_token = os.environ.get("EXPRESSION_WIZARD_COMFY_ADMIN_TOKEN", "")
     server.management = ComfyManagementClient(gateway_url, admin_token) if gateway_url and admin_token else None  # type: ignore[attr-defined]
 
@@ -541,6 +625,8 @@ def main() -> None:
     print("Press Ctrl+C to stop", flush=True)
     if args.open_browser:
         open_when_ready(local_url)
+    if server.idle_timeout_seconds:  # type: ignore[attr-defined]
+        threading.Thread(target=monitor_idle_shutdown, args=(server,), daemon=True, name="expression-wizard-idle").start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

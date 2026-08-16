@@ -62,6 +62,17 @@ async function retryJob(){if(!state.job)return;try{state.job=await api(`/api/exp
 async function loadRecentRuns(){try{const data=await api('/api/explore/jobs');const select=$('#recentRuns'),current=state.job?.job_id||'';select.innerHTML='<option value="">Current setup</option>'+data.jobs.map(job=>`<option value="${job.job_id}">${job.job_id} · ${job.status}</option>`).join('');select.value=current}catch{}}
 
 async function logout(){try{await api('/api/auth/logout',{method:'POST'})}finally{location.replace('/login')}}
+async function stopBackend(){
+  const active=Boolean(state.job&&['queued','running'].includes(state.job.status));
+  const message=active?'An experiment is active. Cancel it after the current image and stop the backend?':'Stop the Expression Wizard background process?';
+  if(!confirm(message))return;
+  try{
+    await api('/api/lifecycle/shutdown',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cancel_active:active})});
+    stopPolling();
+    document.body.innerHTML='<main class="shutdown-screen"><h1>Expression Wizard stopped</h1><p>You can close this tab. Start Expression Wizard again to continue.</p></main>';
+  }catch(error){showError(error.message)}
+}
+function heartbeat(){api('/api/lifecycle/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(()=>{})}
 
 async function uploadSource(file){if(!file)return;try{const source=await api('/api/explore/assets',{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream','X-Filename':encodeURIComponent(file.name)},body:file});addSourceCard(source);selectSource(source)}catch(error){showValidation(error.message)}}
 function resetAll(){if(!state.config)return;for(const name of controlNames)state.fixed[name]=state.config.parameters.controls[name].default;for(const name of ['src_ratio','crop_factor'])state.fixed[name]=state.config.parameters.advanced[name].default;renderParameters();renderManualRows();resetRanges();setMode('sweep');validateForm()}
@@ -73,7 +84,8 @@ $('#gridXParameter').onchange=()=>{setRangeFor('#gridXParameter','#gridXStart','
 $('#gridYParameter').onchange=()=>{setRangeFor('#gridYParameter','#gridYStart','#gridYEnd');validateForm()};
 document.querySelectorAll('.builder input,.builder select').forEach(input=>input.addEventListener('input',validateForm));
 $('#sourceUpload').onchange=event=>uploadSource(event.target.files[0]);
-$('#generateButton').onclick=generate;$('#cancelButton').onclick=cancelJob;$('#retryButton').onclick=retryJob;$('#resetButton').onclick=resetAll;$('#logoutButton').onclick=logout;
+$('#generateButton').onclick=generate;$('#cancelButton').onclick=cancelJob;$('#retryButton').onclick=retryJob;$('#resetButton').onclick=resetAll;$('#stopBackendButton').onclick=stopBackend;$('#logoutButton').onclick=logout;
+heartbeat();setInterval(heartbeat,30000);
 $('#recentRuns').onchange=event=>{if(event.target.value)loadJob(event.target.value)};
 $('#focusPrev').onclick=()=>moveFocus(-1);$('#focusNext').onclick=()=>moveFocus(1);
 document.addEventListener('keydown',event=>{if(state.view!=='focus'||['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;if(event.key==='ArrowLeft')moveFocus(-1);if(event.key==='ArrowRight')moveFocus(1)});

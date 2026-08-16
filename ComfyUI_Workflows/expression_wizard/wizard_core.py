@@ -456,6 +456,22 @@ class WizardService:
                 return summary["job_id"]
         return None
 
+    def active_jobs(self) -> list[dict[str, Any]]:
+        return [job for job in self.list_jobs() if job["status"] in ACTIVE_STATES]
+
+    def cancel_active_jobs(self) -> list[str]:
+        cancelled = []
+        for job in self.active_jobs():
+            self.cancel_job(job["job_id"])
+            cancelled.append(job["job_id"])
+        return cancelled
+
+    def wait_for_idle(self, timeout: float | None = None) -> bool:
+        worker = self._worker
+        if worker and worker.is_alive():
+            worker.join(timeout=timeout)
+        return not (worker and worker.is_alive())
+
     def create_job(self, request: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             active = self._active_job()
