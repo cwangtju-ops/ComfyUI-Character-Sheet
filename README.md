@@ -133,6 +133,19 @@ minimized, waits up to 180 seconds for the API, and then starts the Gateway.
 An existing Comfy Desktop process is never duplicated, restarted, or killed.
 Stopping the Gateway does not stop ComfyUI.
 
+For automatic availability after every desktop sign-in, double-click
+`Install Expression Wizard Desktop Autostart.vbs` once on the desktop. It
+creates a current-user Windows Scheduled Task that runs 15 seconds after sign-in,
+starts ComfyUI and the Gateway silently, prevents duplicate instances, and retries
+startup failures up to five times. No administrator rights or stored Windows
+password are required. `Remove Expression Wizard Desktop Autostart.vbs` removes
+only the task and does not stop running services.
+
+Comfy Desktop requires a signed-in interactive Windows session. A machine left
+at the Windows sign-in screen after a reboot is therefore not considered ready;
+with normal sign-in or Windows auto-sign-in, no application needs to be opened
+manually.
+
 PowerShell status and log controls are also available:
 
 ```powershell

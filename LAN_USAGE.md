@@ -268,6 +268,12 @@ for port 8188 to become healthy before starting the Gateway. It never launches
 a second Desktop instance when one is already starting, and it never force-
 restarts a stalled instance.
 
+To make the desktop available automatically after every Windows sign-in,
+double-click `Install Expression Wizard Desktop Autostart.vbs` once. The
+current-user scheduled task waits 15 seconds, starts the same silent Gateway
+manager, and retries transient startup failures. Use
+`Remove Expression Wizard Desktop Autostart.vbs` to remove this behavior.
+
 ## Security boundaries
 
 - The firewall rule is Private-profile only and restricted to one laptop IPv4.
