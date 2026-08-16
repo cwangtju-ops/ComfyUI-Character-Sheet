@@ -7,6 +7,7 @@ import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -116,6 +117,27 @@ class ComfyGatewayTests(unittest.TestCase):
         expression = Path(self.temp.name) / "wizard" / "candidate.exp"
         transport.materialize_expression("smile", expression)
         self.assertEqual(expression.read_bytes(), b"remote-expression")
+
+        payload = {
+            "schema_version": 1,
+            "source_file": "smile.exp",
+            "e_shape": [1, 21, 3],
+            "e": [[[0.0, 0.0, 0.0] for _ in range(21)]],
+            "r": [0.0, 0.0, 0.0],
+            "s": 0.0,
+            "t": [0.0, 0.0, 0.0],
+            "codes": [{"code": 0, "landmark_index": 0, "axis": 0, "value": 0.0, "value_x1000": 0.0}],
+            "expression_hash": "expression-hash",
+        }
+        exported_binary = Path(self.temp.name) / "wizard" / "exported.exp"
+        exported_json = Path(self.temp.name) / "wizard" / "exported.json"
+        exported_csv = Path(self.temp.name) / "wizard" / "exported.csv"
+        with patch("comfy_gateway.expression_payload", return_value=payload):
+            exported = transport.export_expression("smile", exported_binary, exported_json, exported_csv)
+        self.assertEqual(exported["expression_hash"], "expression-hash")
+        self.assertEqual(exported_binary.read_bytes(), b"remote-expression")
+        self.assertIn('"expression_hash": "expression-hash"', exported_json.read_text(encoding="utf-8"))
+        self.assertIn("landmark_index", exported_csv.read_text(encoding="utf-8-sig"))
 
     def test_constrained_smoke_test_uses_fixed_core_workflow(self) -> None:
         transport = RemoteComfyTransport(self.url, TOKEN)

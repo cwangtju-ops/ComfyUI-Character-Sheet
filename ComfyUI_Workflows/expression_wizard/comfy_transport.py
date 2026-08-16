@@ -19,7 +19,9 @@ from lys_calibration import (  # noqa: E402
     API_DEFAULT,
     ComfyClient,
     copy_verified,
+    export_exp,
     output_image_from_history,
+    write_expression_exports,
 )
 
 
@@ -43,6 +45,11 @@ class ComfyTransport(Protocol):
 
     def materialize_expression(self, expression_name: str, destination: Path) -> None:
         """Copy the generated .exp file into Expression Wizard storage."""
+
+    def export_expression(
+        self, expression_name: str, binary: Path, json_path: Path, csv_path: Path
+    ) -> dict[str, Any]:
+        """Materialize an expression and its safe analysis exports."""
 
 
 class LocalComfyTransport:
@@ -89,6 +96,12 @@ class LocalComfyTransport:
         _, output_root = self._paths()
         source = output_root / "exp_data" / f"{expression_name}.exp"
         copy_verified(source, destination)
+
+    def export_expression(
+        self, expression_name: str, binary: Path, json_path: Path, csv_path: Path
+    ) -> dict[str, Any]:
+        self.materialize_expression(expression_name, binary)
+        return export_exp(binary, json_path, csv_path)
 
 
 class RemoteComfyTransport:
@@ -182,3 +195,14 @@ class RemoteComfyTransport:
         data = self._request("GET", f"/api/output/expression/{name}", expect_json=False)
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
+
+    def export_expression(
+        self, expression_name: str, binary: Path, json_path: Path, csv_path: Path
+    ) -> dict[str, Any]:
+        self.materialize_expression(expression_name, binary)
+        name = urllib.parse.quote(expression_name, safe="")
+        payload = self._request("GET", f"/api/output/expression-json/{name}")
+        if not isinstance(payload, dict) or "expression_hash" not in payload or "codes" not in payload:
+            raise RuntimeError("ComfyUI gateway returned an invalid expression export")
+        write_expression_exports(payload, json_path, csv_path)
+        return payload

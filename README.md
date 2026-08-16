@@ -22,6 +22,9 @@ or image-wash the source.
   and retry without regenerating completed candidates.
 - Exact Comfy workflow JSON, binary `.exp`, tensor JSON/CSV, hashes, manifests,
   and numeric side-effect analysis.
+- In distributed mode, `.exp` tensor decoding stays inside the desktop ComfyUI
+  Python environment; the laptop receives safe JSON/CSV without installing
+  PyTorch.
 - REST, CLI, and sixteen structured MCP tools.
 - Backward-compatible calibration reviewer routes.
 

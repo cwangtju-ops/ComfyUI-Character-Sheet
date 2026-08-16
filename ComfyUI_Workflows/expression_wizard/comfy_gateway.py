@@ -21,7 +21,7 @@ CALIBRATION_DIR = HERE.parent / "calibration"
 if str(CALIBRATION_DIR) not in sys.path:
     sys.path.insert(0, str(CALIBRATION_DIR))
 
-from lys_calibration import API_DEFAULT, ComfyClient  # noqa: E402
+from lys_calibration import API_DEFAULT, ComfyClient, expression_payload  # noqa: E402
 from comfy_diagnostics import (  # noqa: E402
     diagnose_workflow,
     discover_comfy_root,
@@ -255,6 +255,17 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
                 self.send_file(safe_file(self.output_root, relative))
                 return
             prefix = "/api/output/expression/"
+            json_prefix = "/api/output/expression-json/"
+            if parsed.path.startswith(json_prefix):
+                expression_name = urllib.parse.unquote(parsed.path[len(json_prefix) :])
+                if not SAFE_NAME.fullmatch(expression_name):
+                    raise ValueError("Invalid expression name")
+                with self.server.artifact_lock:  # type: ignore[attr-defined]
+                    if expression_name not in self.server.allowed_expressions:  # type: ignore[attr-defined]
+                        raise PermissionError("Expression was not produced by this gateway session")
+                source = safe_file(self.output_root, f"exp_data/{expression_name}.exp")
+                self.send_json(expression_payload(source))
+                return
             if parsed.path.startswith(prefix):
                 expression_name = urllib.parse.unquote(parsed.path[len(prefix) :])
                 if not SAFE_NAME.fullmatch(expression_name):

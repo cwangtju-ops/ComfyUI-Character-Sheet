@@ -149,8 +149,10 @@ Laptop browser / Codex -> laptop Expression Wizard (127.0.0.1:8765)
 ```
 
 The laptop owns anchors, uploads, job manifests, prompts, preview copies, and
-`.exp` copies. The desktop gateway retains only ComfyUI's normal input/output
-artifacts.
+`.exp` copies. Because `.exp` files contain Torch tensors, the desktop gateway
+decodes them inside the active ComfyUI Python environment and returns ordinary
+JSON for laptop-side analysis. The desktop otherwise retains only ComfyUI's
+normal input/output artifacts.
 
 ### Desktop
 

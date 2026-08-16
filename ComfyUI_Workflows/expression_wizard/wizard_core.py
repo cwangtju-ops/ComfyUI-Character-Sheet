@@ -34,7 +34,6 @@ from lys_calibration import (  # noqa: E402
     ComfyClient,
     build_expression_prompt,
     copy_verified,
-    export_exp,
     image_pixel_hash,
     read_json,
     sha256_file,
@@ -576,8 +575,7 @@ class WizardService:
                 exp_binary = job_dir / "exp_data" / f"{candidate_id}.exp"
                 exp_json = job_dir / "exp_data" / f"{candidate_id}.json"
                 exp_csv = job_dir / "exp_data" / f"{candidate_id}.csv"
-                self.transport.materialize_expression(exp_name, exp_binary)
-                expression = export_exp(exp_binary, exp_json, exp_csv)
+                expression = self.transport.export_expression(exp_name, exp_binary, exp_json, exp_csv)
                 record = {
                     "candidate_id": candidate_id,
                     "label": candidate["label"],

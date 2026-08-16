@@ -378,7 +378,7 @@ def _primitive(value: Any) -> Any:
     return float(value)
 
 
-def export_exp(exp_path: Path, json_path: Path, csv_path: Path) -> dict[str, Any]:
+def expression_payload(exp_path: Path) -> dict[str, Any]:
     expression = load_exp(exp_path)
     e = _primitive(expression.e)
     r = _primitive(expression.r)
@@ -398,7 +398,7 @@ def export_exp(exp_path: Path, json_path: Path, csv_path: Path) -> dict[str, Any
                     "value_x1000": float(value) * 1000.0,
                 }
             )
-    payload = {
+    return {
         "schema_version": SCHEMA_VERSION,
         "source_file": exp_path.name,
         "e_shape": [1, 21, 3],
@@ -409,6 +409,9 @@ def export_exp(exp_path: Path, json_path: Path, csv_path: Path) -> dict[str, Any
         "codes": codes,
         "expression_hash": sha256_json({"e": e, "r": r, "s": s, "t": t}),
     }
+
+
+def write_expression_exports(payload: dict[str, Any], json_path: Path, csv_path: Path) -> None:
     write_json(json_path, payload)
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     with csv_path.open("w", newline="", encoding="utf-8-sig") as handle:
@@ -416,7 +419,12 @@ def export_exp(exp_path: Path, json_path: Path, csv_path: Path) -> dict[str, Any
             handle, fieldnames=("code", "landmark_index", "axis", "value", "value_x1000")
         )
         writer.writeheader()
-        writer.writerows(codes)
+        writer.writerows(payload["codes"])
+
+
+def export_exp(exp_path: Path, json_path: Path, csv_path: Path) -> dict[str, Any]:
+    payload = expression_payload(exp_path)
+    write_expression_exports(payload, json_path, csv_path)
     return payload
 
 
