@@ -8,6 +8,7 @@ and a dependency-free stdio MCP bridge for Codex.
 
 Lys 的持续参数结论记录在
 [`EXPRESSION_EXPERIMENT_REPORT.md`](EXPRESSION_EXPERIMENT_REPORT.md)。
+尚未实施的实验和产品想法记录在 [`BACKLOG.md`](BACKLOG.md)。
 
 Expression Wizard performs raw facial-expression geometry only. It does not
 load an SDXL/Pony checkpoint, run diffusion, add prompts, apply masks, upscale,
