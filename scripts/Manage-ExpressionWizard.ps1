@@ -254,7 +254,12 @@ try {
         if ($null -ne $health -and $health.service -eq $expectedService) { $ready = $true; break }
         if ($process.HasExited) { break }
     }
-    if (-not $ready) { throw "$Component did not become healthy. See $stderrLog and $stdoutLog" }
+    if (-not $ready) {
+        if ($process.HasExited -and (Test-Path -LiteralPath $pidFile)) {
+            Remove-Item -LiteralPath $pidFile -Force
+        }
+        throw "$Component did not become healthy. See $stderrLog and $stdoutLog"
+    }
     Write-Result "$Component started silently at $baseUrl (PID $($process.Id))."
     if ($OpenBrowser -and $browserUrl) { Open-Url $browserUrl }
     Complete-Result 0
