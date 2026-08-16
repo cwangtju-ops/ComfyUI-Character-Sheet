@@ -189,7 +189,7 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
         for output in history.get("outputs", {}).values():
             for image in output.get("images", []) if isinstance(output, dict) else []:
                 filename = image.get("filename")
-                subfolder = image.get("subfolder", "")
+                subfolder = str(image.get("subfolder", "")).replace("\\", "/")
                 if isinstance(filename, str) and PurePosixPath(filename).name == filename:
                     image_names.add(f"{subfolder}/{filename}" if subfolder else filename)
         with self.server.artifact_lock:  # type: ignore[attr-defined]
@@ -245,7 +245,7 @@ class ComfyGatewayHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/output/image":
                 query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
                 filename = query.get("filename", [""])[0]
-                subfolder = query.get("subfolder", [""])[0]
+                subfolder = query.get("subfolder", [""])[0].replace("\\", "/")
                 if not filename or PurePosixPath(filename).name != filename:
                     raise ValueError("Invalid output filename")
                 relative = f"{subfolder}/{filename}" if subfolder else filename

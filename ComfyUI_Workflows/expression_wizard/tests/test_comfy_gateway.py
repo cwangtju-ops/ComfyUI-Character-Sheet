@@ -58,7 +58,8 @@ class FakeComfyClient:
         assert prompt_id == "remote-prompt-1"
         assert timeout in {42.0, 600.0}
         node_id = "7" if "7" in self.queued else "3"
-        return {"outputs": {node_id: {"images": [{"filename": "result.png", "subfolder": "remote-job"}]}}}
+        subfolder = "remote-job" if node_id == "3" else "remote-job\\windows-output"
+        return {"outputs": {node_id: {"images": [{"filename": "result.png", "subfolder": subfolder}]}}}
 
 
 class ComfyGatewayTests(unittest.TestCase):
@@ -72,6 +73,8 @@ class ComfyGatewayTests(unittest.TestCase):
         (root / "models" / "liveportrait" / "broken.safetensors").write_bytes(b"bad")
         (self.output_root / "remote-job").mkdir(parents=True)
         Image.new("RGB", (512, 512), "purple").save(self.output_root / "remote-job" / "result.png")
+        (self.output_root / "remote-job" / "windows-output").mkdir()
+        Image.new("RGB", (512, 512), "purple").save(self.output_root / "remote-job" / "windows-output" / "result.png")
         (self.output_root / "exp_data").mkdir()
         (self.output_root / "exp_data" / "smile.exp").write_bytes(b"remote-expression")
         self.client = FakeComfyClient(self.input_root, self.output_root)
