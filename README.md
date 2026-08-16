@@ -128,10 +128,12 @@ be running. Reopening the silent laptop launcher reconnects to the existing inst
 Repeated starts never create a second instance on the same port.
 
 The desktop launcher checks ComfyUI's `127.0.0.1:8188/system_stats` endpoint
-before starting the Gateway. If ComfyUI is offline, it starts Comfy Desktop
-minimized, waits up to 180 seconds for the API, and then starts the Gateway.
-An existing Comfy Desktop process is never duplicated, restarted, or killed.
-Stopping the Gateway does not stop ComfyUI.
+before starting the Gateway. If ComfyUI is offline, it launches the configured
+Powerhouse instance directly and silently with the same Comfy Desktop instance
+model paths and shared input/output folders, waits up to 180 seconds for the
+API, and then starts the Gateway. This does not depend on the Comfy Desktop app
+window selecting and launching the instance. Stopping the Gateway does not stop
+ComfyUI.
 
 For automatic availability after every desktop sign-in, double-click
 `Install Expression Wizard Desktop Autostart.vbs` once on the desktop. It
@@ -146,10 +148,10 @@ If an older task named `Expression Wizard Comfy Gateway` directly launches
 `%USERPROFILE%\.expression_wizard\backups` and disables it before registering
 the managed task. It does not delete the legacy task.
 
-Comfy Desktop requires a signed-in interactive Windows session. A machine left
-at the Windows sign-in screen after a reboot is therefore not considered ready;
-with normal sign-in or Windows auto-sign-in, no application needs to be opened
-manually.
+The current-user task requires a signed-in Windows session. A machine left at
+the Windows sign-in screen after a reboot is therefore not considered ready;
+with normal sign-in or Windows auto-sign-in, neither Comfy Desktop nor another
+application needs to be opened manually.
 
 PowerShell status and log controls are also available:
 
@@ -176,7 +178,8 @@ precedence over built-in defaults when no JSON value is present. For example:
     "comfy_root": "C:\\ComfyUI",
     "python": "C:\\ComfyUI\\.venv\\Scripts\\python.exe",
     "allowed_clients": "192.168.2.242",
-    "comfy_desktop_executable": "C:\\Program Files\\ComfyUI\\Comfy Desktop.exe",
+    "comfy_extra_model_paths_config": "C:\\Users\\me\\AppData\\Roaming\\Comfy Desktop\\instance-model-paths\\inst-example.yaml",
+    "comfy_shared_root": "C:\\Users\\me\\AppData\\Local\\Comfy-Desktop\\ComfyUI-Shared",
     "comfy_start_timeout_seconds": 180
   }
 }

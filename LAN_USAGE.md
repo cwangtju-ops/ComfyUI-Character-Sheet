@@ -263,10 +263,11 @@ current image returns. Runtime logs and PID metadata are stored outside the
 repository under `%USERPROFILE%\.expression_wizard\runtime`.
 
 The Gateway launcher verifies ComfyUI through its local HTTP API. If ComfyUI is
-offline, it starts the configured Comfy Desktop executable minimized and waits
-for port 8188 to become healthy before starting the Gateway. It never launches
-a second Desktop instance when one is already starting, and it never force-
-restarts a stalled instance.
+offline, it directly starts the configured Powerhouse instance in a hidden
+process, using the newest Comfy Desktop `inst-*.yaml` model-path file and its
+shared input/output folders. It waits for port 8188 to become healthy before
+starting the Gateway. This avoids relying on the Comfy Desktop app window to
+select and launch the instance after reboot.
 
 To make the desktop available automatically after every Windows sign-in,
 double-click `Install Expression Wizard Desktop Autostart.vbs` once. The

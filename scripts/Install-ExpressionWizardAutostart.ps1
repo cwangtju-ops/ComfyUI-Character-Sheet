@@ -71,7 +71,7 @@ $settings = New-ScheduledTaskSettingsSet `
     -MultipleInstances IgnoreNew
 
 $task = New-ScheduledTask -Action $taskAction -Trigger $trigger -Principal $principal -Settings $settings `
-    -Description 'Starts Comfy Desktop when needed, waits for ComfyUI, then starts the authenticated Expression Wizard Gateway.'
+    -Description 'Starts the ComfyUI Powerhouse instance silently when needed, waits for its API, then starts the authenticated Expression Wizard Gateway.'
 Register-ScheduledTask -TaskName $taskName -InputObject $task -Force -ErrorAction Stop | Out-Null
 Write-Output "Expression Wizard desktop autostart was installed for $userId."
 

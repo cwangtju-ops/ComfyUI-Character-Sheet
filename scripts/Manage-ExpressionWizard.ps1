@@ -97,6 +97,58 @@ function Wait-ForHttp([string]$Url, [int]$TimeoutSeconds) {
     return $false
 }
 
+function Start-ComfyPowerhouse(
+    [string]$Python,
+    [string]$ComfyRoot,
+    [string]$ExtraModelPathsConfig,
+    [string]$InputDirectory,
+    [string]$OutputDirectory
+) {
+    $mainScript = Join-Path $ComfyRoot 'main.py'
+    foreach ($required in @($Python, $mainScript, $ExtraModelPathsConfig, $InputDirectory, $OutputDirectory)) {
+        if (-not (Test-Path -LiteralPath $required)) {
+            throw "Cannot start the Powerhouse instance because a required path is missing: $required"
+        }
+    }
+
+    $comfyStdoutLog = Join-Path $runtimeRoot 'comfy_stdout.log'
+    $comfyStderrLog = Join-Path $runtimeRoot 'comfy_stderr.log'
+    $comfyPidFile = Join-Path $runtimeRoot 'comfy_process.json'
+    Rotate-Log $comfyStdoutLog
+    Rotate-Log $comfyStderrLog
+
+    $comfyArguments = @(
+        '-s',
+        $mainScript,
+        '--feature-flag', 'show_signin_button=true',
+        '--enable-manager',
+        '--extra-model-paths-config', $ExtraModelPathsConfig,
+        '--input-directory', $InputDirectory,
+        '--output-directory', $OutputDirectory
+    )
+    $argumentLine = ($comfyArguments | ForEach-Object { Quote-Argument "$_" }) -join ' '
+    $process = Start-Process -FilePath $Python -ArgumentList $argumentLine `
+        -WorkingDirectory (Split-Path -Parent $ComfyRoot) -WindowStyle Hidden `
+        -RedirectStandardOutput $comfyStdoutLog -RedirectStandardError $comfyStderrLog -PassThru
+    $record = [ordered]@{
+        component = 'ComfyUI Powerhouse'
+        pid = $process.Id
+        started_at = [DateTime]::UtcNow.ToString('o')
+        process_start_time = $process.StartTime.ToUniversalTime().ToString('o')
+        executable = $Python
+        script = $mainScript
+        extra_model_paths_config = $ExtraModelPathsConfig
+        input_directory = $InputDirectory
+        output_directory = $OutputDirectory
+    }
+    [IO.File]::WriteAllText($comfyPidFile, ($record | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+    return [pscustomobject]@{
+        Process = $process
+        StdoutLog = $comfyStdoutLog
+        StderrLog = $comfyStderrLog
+    }
+}
+
 function Get-TrackedProcess {
     if (-not (Test-Path -LiteralPath $pidFile)) { return $null }
     try {
@@ -158,8 +210,14 @@ try {
         $python = [string](Get-PropertyValue $settings 'python' $(if ($env:EXPRESSION_WIZARD_PYTHON) { $env:EXPRESSION_WIZARD_PYTHON } else { 'C:\Comfy Powerhouse\Comfy Powerhouse\ComfyUI\.venv\Scripts\python.exe' }))
         $comfyRoot = [string](Get-PropertyValue $settings 'comfy_root' $(if ($env:EXPRESSION_WIZARD_COMFY_ROOT) { $env:EXPRESSION_WIZARD_COMFY_ROOT } else { 'C:\Comfy Powerhouse\Comfy Powerhouse\ComfyUI' }))
         $allowedClients = [string](Get-PropertyValue $settings 'allowed_clients' $(if ($env:EXPRESSION_WIZARD_ALLOWED_CLIENTS) { $env:EXPRESSION_WIZARD_ALLOWED_CLIENTS } else { '192.168.2.242' }))
-        $comfyDesktopExecutable = [string](Get-PropertyValue $settings 'comfy_desktop_executable' 'C:\Comfy Install\Comfy Desktop\Comfy Desktop.exe')
         $comfyStartTimeout = [int](Get-PropertyValue $settings 'comfy_start_timeout_seconds' 180)
+        $instanceConfigRoot = Join-Path $env:APPDATA 'Comfy Desktop\instance-model-paths'
+        $defaultExtraModelPathsConfig = Get-ChildItem -LiteralPath $instanceConfigRoot -Filter 'inst-*.yaml' -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+        $extraModelPathsConfig = [string](Get-PropertyValue $settings 'comfy_extra_model_paths_config' $defaultExtraModelPathsConfig)
+        $comfySharedRoot = [string](Get-PropertyValue $settings 'comfy_shared_root' (Join-Path $env:LOCALAPPDATA 'Comfy-Desktop\ComfyUI-Shared'))
+        $comfyInputDirectory = [string](Get-PropertyValue $settings 'comfy_input_directory' (Join-Path $comfySharedRoot 'input'))
+        $comfyOutputDirectory = [string](Get-PropertyValue $settings 'comfy_output_directory' (Join-Path $comfySharedRoot 'output'))
         $port = [int](Get-PropertyValue $settings 'port' 8189)
         $baseUrl = "http://127.0.0.1:$port"
         $healthUrl = "$baseUrl/health"
@@ -170,21 +228,13 @@ try {
         }
         if (-not $allowedClients.Trim()) { throw 'At least one allowed laptop IPv4 address is required.' }
         if ($Action -eq 'Start' -and -not (Get-ExpectedService 'http://127.0.0.1:8188/system_stats')) {
-            if (-not (Test-Path -LiteralPath $comfyDesktopExecutable)) {
-                throw "ComfyUI is offline and Comfy Desktop was not found: $comfyDesktopExecutable"
-            }
-            $desktopProcess = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-                $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath) -eq [IO.Path]::GetFullPath($comfyDesktopExecutable) -and
-                $_.CommandLine -notmatch '--type='
-            } | Select-Object -First 1
-            if (-not $desktopProcess) {
-                Write-Result 'ComfyUI is offline; starting Comfy Desktop first.'
-                Start-Process -FilePath $comfyDesktopExecutable -WindowStyle Minimized | Out-Null
-            } else {
-                Write-Result "Comfy Desktop is already starting (PID $($desktopProcess.ProcessId)); waiting for its API."
-            }
+            Write-Result 'ComfyUI is offline; starting the Powerhouse instance silently.'
+            $comfyLaunch = Start-ComfyPowerhouse $python $comfyRoot $extraModelPathsConfig $comfyInputDirectory $comfyOutputDirectory
             if (-not (Wait-ForHttp 'http://127.0.0.1:8188/system_stats' $comfyStartTimeout)) {
-                throw "Comfy Desktop did not expose http://127.0.0.1:8188 within $comfyStartTimeout seconds. It was not restarted or terminated."
+                if ($comfyLaunch.Process.HasExited) {
+                    throw "The Powerhouse instance exited before becoming ready. See $($comfyLaunch.StderrLog) and $($comfyLaunch.StdoutLog)"
+                }
+                throw "The Powerhouse instance did not expose http://127.0.0.1:8188 within $comfyStartTimeout seconds. See $($comfyLaunch.StderrLog) and $($comfyLaunch.StdoutLog)"
             }
             Write-Result 'ComfyUI is ready; starting the authenticated Gateway.'
         }
