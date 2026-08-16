@@ -6,6 +6,9 @@ It builds deterministic 12-candidate experiments through a running ComfyUI
 instance and exposes the same operations through a browser UI, REST API, CLI,
 and a dependency-free stdio MCP bridge for Codex.
 
+Lys 的持续参数结论记录在
+[`EXPRESSION_EXPERIMENT_REPORT.md`](EXPRESSION_EXPERIMENT_REPORT.md)。
+
 Expression Wizard performs raw facial-expression geometry only. It does not
 load an SDXL/Pony checkpoint, run diffusion, add prompts, apply masks, upscale,
 or image-wash the source.
