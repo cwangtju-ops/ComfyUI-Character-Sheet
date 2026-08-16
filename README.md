@@ -127,6 +127,10 @@ This is intentional: browser close events are unreliable and an experiment may s
 be running. Reopening the silent laptop launcher reconnects to the existing instance.
 Repeated starts never create a second instance on the same port.
 
+The legacy `Expression Wizard Laptop Backend` scheduled task remains compatible:
+its `scripts/Start-LaptopBackend.ps1` entry point now delegates to the same
+silent lifecycle manager instead of hosting an unmanaged server process.
+
 The desktop launcher checks ComfyUI's `127.0.0.1:8188/system_stats` endpoint
 before starting the Gateway. If ComfyUI is offline, it launches the configured
 Powerhouse instance directly and silently with the same Comfy Desktop instance
