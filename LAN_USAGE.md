@@ -262,6 +262,12 @@ stop action asks before cancelling an active experiment and waits until its
 current image returns. Runtime logs and PID metadata are stored outside the
 repository under `%USERPROFILE%\.expression_wizard\runtime`.
 
+The Gateway launcher verifies ComfyUI through its local HTTP API. If ComfyUI is
+offline, it starts the configured Comfy Desktop executable minimized and waits
+for port 8188 to become healthy before starting the Gateway. It never launches
+a second Desktop instance when one is already starting, and it never force-
+restarts a stalled instance.
+
 ## Security boundaries
 
 - The firewall rule is Private-profile only and restricted to one laptop IPv4.

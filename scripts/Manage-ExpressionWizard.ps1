@@ -88,6 +88,15 @@ function Get-ExpectedService([string]$HealthUrl) {
     }
 }
 
+function Wait-ForHttp([string]$Url, [int]$TimeoutSeconds) {
+    $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $TimeoutSeconds))
+    do {
+        if (Get-ExpectedService $Url) { return $true }
+        Start-Sleep -Milliseconds 500
+    } while ([DateTime]::UtcNow -lt $deadline)
+    return $false
+}
+
 function Get-TrackedProcess {
     if (-not (Test-Path -LiteralPath $pidFile)) { return $null }
     try {
@@ -149,6 +158,8 @@ try {
         $python = [string](Get-PropertyValue $settings 'python' $(if ($env:EXPRESSION_WIZARD_PYTHON) { $env:EXPRESSION_WIZARD_PYTHON } else { 'C:\Comfy Powerhouse\Comfy Powerhouse\ComfyUI\.venv\Scripts\python.exe' }))
         $comfyRoot = [string](Get-PropertyValue $settings 'comfy_root' $(if ($env:EXPRESSION_WIZARD_COMFY_ROOT) { $env:EXPRESSION_WIZARD_COMFY_ROOT } else { 'C:\Comfy Powerhouse\Comfy Powerhouse\ComfyUI' }))
         $allowedClients = [string](Get-PropertyValue $settings 'allowed_clients' $(if ($env:EXPRESSION_WIZARD_ALLOWED_CLIENTS) { $env:EXPRESSION_WIZARD_ALLOWED_CLIENTS } else { '192.168.2.242' }))
+        $comfyDesktopExecutable = [string](Get-PropertyValue $settings 'comfy_desktop_executable' 'C:\Comfy Install\Comfy Desktop\Comfy Desktop.exe')
+        $comfyStartTimeout = [int](Get-PropertyValue $settings 'comfy_start_timeout_seconds' 180)
         $port = [int](Get-PropertyValue $settings 'port' 8189)
         $baseUrl = "http://127.0.0.1:$port"
         $healthUrl = "$baseUrl/health"
@@ -158,6 +169,25 @@ try {
             if (-not (Test-Path -LiteralPath $required)) { throw "Required path is missing: $required" }
         }
         if (-not $allowedClients.Trim()) { throw 'At least one allowed laptop IPv4 address is required.' }
+        if ($Action -eq 'Start' -and -not (Get-ExpectedService 'http://127.0.0.1:8188/system_stats')) {
+            if (-not (Test-Path -LiteralPath $comfyDesktopExecutable)) {
+                throw "ComfyUI is offline and Comfy Desktop was not found: $comfyDesktopExecutable"
+            }
+            $desktopProcess = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+                $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath) -eq [IO.Path]::GetFullPath($comfyDesktopExecutable) -and
+                $_.CommandLine -notmatch '--type='
+            } | Select-Object -First 1
+            if (-not $desktopProcess) {
+                Write-Result 'ComfyUI is offline; starting Comfy Desktop first.'
+                Start-Process -FilePath $comfyDesktopExecutable -WindowStyle Minimized | Out-Null
+            } else {
+                Write-Result "Comfy Desktop is already starting (PID $($desktopProcess.ProcessId)); waiting for its API."
+            }
+            if (-not (Wait-ForHttp 'http://127.0.0.1:8188/system_stats' $comfyStartTimeout)) {
+                throw "Comfy Desktop did not expose http://127.0.0.1:8188 within $comfyStartTimeout seconds. It was not restarted or terminated."
+            }
+            Write-Result 'ComfyUI is ready; starting the authenticated Gateway.'
+        }
         $arguments = @($scriptPath, '--host', '0.0.0.0', '--port', "$port", '--api', 'http://127.0.0.1:8188', '--comfy-root', $comfyRoot, '--control-token-file', $controlTokenFile)
         foreach ($clientAddress in $allowedClients.Split(',', [StringSplitOptions]::RemoveEmptyEntries)) {
             $arguments += @('--allow-client', $clientAddress.Trim())

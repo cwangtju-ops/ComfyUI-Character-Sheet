@@ -127,6 +127,12 @@ This is intentional: browser close events are unreliable and an experiment may s
 be running. Reopening the silent laptop launcher reconnects to the existing instance.
 Repeated starts never create a second instance on the same port.
 
+The desktop launcher checks ComfyUI's `127.0.0.1:8188/system_stats` endpoint
+before starting the Gateway. If ComfyUI is offline, it starts Comfy Desktop
+minimized, waits up to 180 seconds for the API, and then starts the Gateway.
+An existing Comfy Desktop process is never duplicated, restarted, or killed.
+Stopping the Gateway does not stop ComfyUI.
+
 PowerShell status and log controls are also available:
 
 ```powershell
@@ -151,7 +157,9 @@ precedence over built-in defaults when no JSON value is present. For example:
     "port": 8189,
     "comfy_root": "C:\\ComfyUI",
     "python": "C:\\ComfyUI\\.venv\\Scripts\\python.exe",
-    "allowed_clients": "192.168.2.242"
+    "allowed_clients": "192.168.2.242",
+    "comfy_desktop_executable": "C:\\Program Files\\ComfyUI\\Comfy Desktop.exe",
+    "comfy_start_timeout_seconds": 180
   }
 }
 ```
