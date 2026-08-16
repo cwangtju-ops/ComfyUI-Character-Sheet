@@ -141,6 +141,11 @@ startup failures up to five times. No administrator rights or stored Windows
 password are required. `Remove Expression Wizard Desktop Autostart.vbs` removes
 only the task and does not stop running services.
 
+If an older task named `Expression Wizard Comfy Gateway` directly launches
+`comfy_gateway.py`, the installer exports its XML under
+`%USERPROFILE%\.expression_wizard\backups` and disables it before registering
+the managed task. It does not delete the legacy task.
+
 Comfy Desktop requires a signed-in interactive Windows session. A machine left
 at the Windows sign-in screen after a reboot is therefore not considered ready;
 with normal sign-in or Windows auto-sign-in, no application needs to be opened
